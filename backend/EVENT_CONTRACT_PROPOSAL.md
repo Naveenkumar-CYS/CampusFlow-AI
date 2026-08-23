@@ -53,6 +53,44 @@ negotiable.
   student / archive dependent records.
 - **`data` payload:** `id`, `student_id` only.
 
+### `admission.created`
+- **Purpose:** a new admission application was submitted.
+- **Producer:** Admission service.
+- **Example consumers:** review/queueing tooling, notification module
+  (not built yet).
+- **`data` payload:** full admission record.
+
+### `admission.updated`
+- **Purpose:** an admission's fields changed (not a status transition —
+  see `admission.approved`/`admission.rejected` for those).
+- **Producer:** Admission service.
+- **`data` payload:** `id`, `application_number`, and changed fields
+  (same full-vs-diff question as `student.updated` below).
+
+### `admission.approved`
+- **Purpose:** an admission was approved. In the current Day-2
+  implementation this is also the moment a Student record gets
+  auto-created/linked — once this becomes a real event, this is the
+  natural point downstream services (fees, hostel) would react to
+  provision their own records.
+- **Producer:** Admission service.
+- **`data` payload:** `id`, `application_number`, `student_id` (the newly
+  linked/created student).
+
+### `admission.rejected`
+- **Purpose:** an admission was rejected. No Student is created.
+- **Producer:** Admission service.
+- **`data` payload:** `id`, `application_number`.
+
+## Where event publication would go (not implemented yet)
+
+Both `student.py` and `admission.py` service modules are the natural
+publication points — e.g. inside `admission_service.update_admission`,
+right after the status transitions to `APPROVED`, is where an
+`admission.approved` event would be emitted once we have a transport.
+No publishing code exists yet; this is purely marking where it belongs
+architecturally so it's a small addition later rather than a rewrite.
+
 ## Open questions for Person B
 
 1. Transport: Kafka, RabbitMQ, or simple webhook/HTTP callbacks? This
@@ -67,11 +105,12 @@ negotiable.
 
 ## Message to send Person B
 
-> Hey — Day 1 backend is up: FastAPI + Postgres + Student CRUD
-> (`POST/GET /students`, `GET /students/{student_id}`). I've drafted a
-> proposed event contract for `student.created/updated/deleted` in
-> `EVENT_CONTRACT_PROPOSAL.md` in the repo — nothing is implemented or
-> final yet. Can you take a look and let me know: (1) what transport
-> we're using, (2) full snapshot vs diff for updates, and (3) whether we
-> key off `student_id` or the internal UUID? Once we lock this I'll wire
-> up actual publishing.
+> Update from Day 2: Admission is now live too (full CRUD +
+> approve-triggers-Student-creation, idempotent). Added
+> `admission.created/updated/approved/rejected` proposals to
+> `EVENT_CONTRACT_PROPOSAL.md` alongside the Student ones from Day 1 —
+> still nothing implemented or final. Same open questions as before
+> (transport, full-vs-diff updates, join key) plus one new one: should
+> `admission.approved` carry the newly-created `student_id`, or should
+> that be a separate `student.created` event fired at the same time?
+> Let me know when you've got a read on this.

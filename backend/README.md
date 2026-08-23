@@ -45,6 +45,15 @@ Verify the table exists:
 psql -d campusflow -c '\d students'
 ```
 
+## Run tests
+
+```bash
+pytest tests/ -v
+```
+
+Runs against whatever DB `.env` points to (no separate test DB in Day 2 —
+tests use randomized IDs so repeated runs don't collide with existing data).
+
 ## Run the server
 
 ```bash
@@ -58,13 +67,22 @@ uvicorn app.main:app --reload
 
 ## API
 
-| Method | Endpoint              | Purpose                |
-|--------|-----------------------|-------------------------|
-| GET    | /health                | Liveness check          |
-| GET    | /health/db             | Verifies DB connectivity (`SELECT 1`) |
-| POST   | /students               | Create a student         |
-| GET    | /students/{student_id}  | Fetch one student by enrollment/roll number |
-| GET    | /students               | List all students        |
+| Method | Endpoint                    | Purpose                |
+|--------|------------------------------|-------------------------|
+| GET    | /health                      | Liveness check          |
+| GET    | /health/db                   | Verifies DB connectivity (`SELECT 1`) |
+| POST   | /students                     | Create a student         |
+| GET    | /students/{student_id}        | Fetch one student by enrollment/roll number |
+| GET    | /students                     | List all students        |
+| PATCH  | /students/{student_id}        | Partial update            |
+| DELETE | /students/{student_id}        | Delete (blocked if admissions reference it) |
+| POST   | /admissions                    | Create an admission application |
+| GET    | /admissions/{application_number} | Fetch one admission     |
+| GET    | /admissions                    | List all admissions      |
+| PATCH  | /admissions/{application_number} | Partial update / status transition |
+| DELETE | /admissions/{application_number} | Delete an admission     |
+
+Full request/response examples: see `API_CONTRACT.md`.
 
 ## Why SQLAlchemy (not SQLModel)
 
@@ -93,3 +111,37 @@ mature, which reduces risk on a hackathon timeline.
 Deliberately NOT added yet: soft-delete flag, status/enum field,
 hostel/fees foreign keys, auth fields — those belong to their owning
 modules, not the anchor entity.
+
+## Admission schema decisions (Day 2)
+
+- `Admission.student_id` is a **nullable** FK to `students.id`, set only
+  once an admission is approved. An application isn't a Student until
+  it's accepted — keeping this nullable and separate avoids treating
+  every applicant as a Student prematurely.
+- Applicant data (`applicant_name`, `applicant_email`, etc.) is stored
+  directly on Admission rather than requiring a Student to exist first.
+  This does duplicate a few fields once a Student is created from it,
+  but that's intentional: the applicant's submitted data and the
+  Student's live record are allowed to diverge (e.g. course changes
+  during review).
+- **Relationship: one Student → many Admissions.** A person can have
+  multiple admission records over time (reapplication after rejection,
+  lateral entry, etc.), but each Admission links to at most one Student.
+- **On Student delete, Admission FK is `ON DELETE RESTRICT`** — deleting
+  a Student that has admission history is blocked rather than cascaded
+  or nulled out. Admission is the historical record of *how* that
+  student joined; silently cascading would destroy institutional record,
+  and `SET NULL` would leave orphaned admissions with no way to trace
+  back who they belonged to. If a Student truly needs to be removed,
+  the admission history should be handled explicitly first.
+
+## Admission → Student workflow
+
+Chosen approach: **approval automatically creates/links the Student**
+(`PATCH /admissions/{id}` with `{"status": "APPROVED"}`). This fits the
+"Smart Automation" theme and avoids a second manual step. The operation
+is idempotent — re-approving an already-linked admission does not create
+a duplicate Student; it's a no-op. The Student's `student_id` is
+deterministically derived from the admission's `application_number`
+(`APP2026001` → `STU2026001`) — see `API_CONTRACT.md` for details and
+its Day-2 limitations.
