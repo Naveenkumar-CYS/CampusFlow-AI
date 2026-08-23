@@ -1,0 +1,28 @@
+**Person A — Core ERP Backend (heaviest load)**
+- API Gateway, Auth (JWT), RBAC middleware
+- All six domain services: Student, Admission, Fee, Hostel, Examination, Attendance
+- PostgreSQL schema design + migrations
+- Payment gateway integration (webhook → Fee Service)
+
+This is the actual ERP — every workflow in the doc depends on this existing first, so it should be the person most comfortable with backend architecture and database design.
+
+**Person B — Automation + AI Layer (heaviest load)**
+- Event Bus (Redis Streams), Event Processor, Rule Engine, Workflow Engine, Action Executor
+- AI/Analytics service (risk detection, attendance pattern model) — scikit-learn
+- Notification service (email/SMS integration)
+- Audit log implementation
+
+This is your "Smart Automation" differentiator — the part judges will interrogate hardest, so it needs one owner end-to-end rather than being split, so the person can explain the full event→rule→AI→action chain fluently.
+
+**Person C — Frontend, portals 1**
+- Student Portal, Faculty Portal
+- Shared component library / design system for the React app (so C and D don't duplicate work)
+
+**Person D — Frontend, portals 2**
+- Admin Portal, Accounts Portal, Warden Portal, Exam Portal
+- Institutional Dashboard (consumes Reporting Service data)
+
+**Person E — Infra, Security, Docs**
+- Docker setup + deployment (cloud VM/PaaS)
+- Encryption at rest, backup/recovery script, rate limiting at gateway
+- PPT slides (Version A diagram), demo script, README, and the Q&A defense prep (weaknesses/fixes section, mapping table)

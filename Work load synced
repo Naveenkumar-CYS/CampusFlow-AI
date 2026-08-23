@@ -1,0 +1,41 @@
+Here's the sequencing as a phased timeline, so everyone can see what's happening in parallel and where they need to sync up.
+
+**Phase 0 — Setup (Day 1, everyone in parallel)**
+- **A**: Set up FastAPI skeleton + PostgreSQL connection.
+- **B**: Set up Redis + a minimal Event Bus wrapper, test with a dummy event.
+- **C**: Set up React project + start the shared component library.
+- **D**: Sync with C on the component library, then start on Admin Portal shell/layout.
+- **E**: Set up Docker + repo structure — this needs to land first since everyone else develops against it.
+
+*Sync point end of Day 1*: A and B agree on the exact event names and payload shapes (`FeePaid`, `AttendanceMarked`, etc.) and drop them in a shared markdown doc.
+
+**Phase 1 — Core Schema & Stubs (Day 2)**
+- **A**: Design/migrate Student + Admission schemas, build Student Service + Admission Service with basic CRUD (even unstyled). This is the critical unblock for C.
+- **B**: Build the Event Processor + Rule Engine, starting with fee due-date and attendance threshold rules — test against dummy events, not real ones yet.
+- **C**: Finish shared component library, start building Student Portal forms against A's stubbed endpoints as they land.
+- **D**: Continue Admin Portal + start Institutional Dashboard shell (static/mock data for now).
+- **E**: Set up cloud deployment target (PaaS/VM) so there's somewhere to push builds once things work.
+
+**Phase 2 — Remaining Services + Automation Chain (Days 3–4)**
+- **A**: Build Fee, Hostel, Examination, Attendance services — each with core CRUD and one write endpoint that emits an event. Wire in Auth (JWT) + RBAC once services exist.
+- **B**: Build Workflow Engine + Action Executor, get a full trigger→action chain working end-to-end on dummy data. Wire Notification service in.
+- **C**: Finish Student Portal (fee status, hostel request, exam registration, attendance view), start Faculty Portal (attendance marking, roster).
+- **D**: Build Accounts Portal (fee ledger) and Warden Portal (room allocation) against A's Fee/Hostel endpoints.
+- **E**: Add rate limiting, backup script, encryption-at-rest config once A's schema is stable. Start building the Version A PPT diagram.
+
+*Sync point*: A's real events should now be flowing into B's Event Bus — test this integration together explicitly, don't assume it just works because both sides "look done."
+
+**Phase 3 — Integration + AI Layer (Day 5)**
+- **A**: Integrate payment gateway webhook into Fee Service.
+- **B**: Add the AI advisory piece (risk scoring) last — keep it small and demoable, not the main event. Add Audit Log writes at every Action Executor call.
+- **C**: Wire login/JWT into both portals once A's Auth is live. Build Faculty Portal's advisory alerts view (depends on B's automation being live).
+- **D**: Build Exam Portal, wire Institutional Dashboard to real Reporting Service data now that B's events are flowing.
+- **E**: Deploy the integrated build to the cloud target, start writing the README + demo script.
+
+**Phase 4 — End-to-End Testing (Day 6)**
+- **All of A, B, C, D**: Run the five workflows end-to-end together (admission, fee payment, hostel allocation, exam registration, attendance automation) and fix breakages live — this is a joint session, not solo work.
+- **E**: Finalize slides, run through the SIH25103 mapping table and weaknesses/fixes section with the team.
+
+**Phase 5 — Demo Prep (Day 7, everyone)**
+- Rehearse the full demo twice as a team.
+- Every person should be able to explain not just their own part but the full trigger chain (Event → Rule → AI advisory → Human review → Action → Audit) — this is what E should specifically drill into Q&A prep, since it's the part judges will probe hardest.
