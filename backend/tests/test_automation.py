@@ -13,7 +13,7 @@ from app.automation.events import CanonicalEvent, EventValidationError
 from app.automation.producer import make_attendance_marked_event, make_fee_paid_event
 from app.automation.rules import Rule, RuleEngine
 from app.automation.store import InMemoryExecutionStore
-from app.automation.workflows import WorkflowEngine
+from app.automation.workflows import Workflow, WorkflowEngine, WorkflowStep
 
 
 def make_consumer():
@@ -61,6 +61,64 @@ def test_high_attendance_does_not_match_rule():
 
     assert result.status == "no_rule_matched"
     assert result.workflow_run is None
+
+
+def test_multiple_matching_rules_higher_priority_wins():
+    event_type = make_attendance_marked_event().event_type
+    low_priority = Rule(
+        id="RULE-LOW",
+        name="low priority catch-all",
+        event_type=event_type,
+        condition=lambda data: True,
+        workflow_id="fee_payment_confirmation",  # arbitrary, just needs to differ
+        enabled=True,
+        priority=1,
+    )
+    high_priority = Rule(
+        id="RULE-HIGH",
+        name="high priority specific",
+        event_type=event_type,
+        condition=lambda data: True,
+        workflow_id="attendance_warning",
+        enabled=True,
+        priority=10,
+    )
+    engine = RuleEngine(rules=[low_priority, high_priority])
+    event = make_attendance_marked_event(attendance_percentage=10)
+
+    matched = engine.match(event)
+
+    assert matched.id == "RULE-HIGH"
+    assert [r.id for r in engine.match_all(event)] == ["RULE-HIGH", "RULE-LOW"]
+
+
+def test_equal_priority_rules_are_deterministic_by_catalog_order():
+    event_type = make_attendance_marked_event().event_type
+    first = Rule(
+        id="RULE-A",
+        name="first in catalog",
+        event_type=event_type,
+        condition=lambda data: True,
+        workflow_id="attendance_warning",
+        enabled=True,
+        priority=5,
+    )
+    second = Rule(
+        id="RULE-B",
+        name="second in catalog, same priority",
+        event_type=event_type,
+        condition=lambda data: True,
+        workflow_id="fee_payment_confirmation",
+        enabled=True,
+        priority=5,
+    )
+    engine = RuleEngine(rules=[first, second])
+    event = make_attendance_marked_event(attendance_percentage=10)
+
+    # Same result across repeated calls -- not relying on set/dict
+    # ordering or any other incidental non-determinism.
+    for _ in range(3):
+        assert engine.match(event).id == "RULE-A"
 
 
 def test_disabled_rule_never_matches():
@@ -178,6 +236,101 @@ def test_workflow_stops_on_first_action_failure():
     assert run.status == "failed"
     # only the failing first step ran -- send_email/send_sms/record_execution never attempted
     assert [a.action for a in run.action_results] == ["create_notification"]
+
+
+# ---------- Workflow definitions ----------
+
+def test_unknown_workflow_id_raises():
+    store = InMemoryExecutionStore()
+    engine = WorkflowEngine(store)
+    event = make_attendance_marked_event()
+
+    with pytest.raises(ValueError):
+        engine.run("no-such-workflow", event)
+
+
+def test_disabled_workflow_raises():
+    store = InMemoryExecutionStore()
+    catalog = {
+        "disabled_flow": Workflow(
+            workflow_id="disabled_flow",
+            name="Disabled Flow",
+            steps=[WorkflowStep(1, "create_notification")],
+            enabled=False,
+        )
+    }
+    engine = WorkflowEngine(store, catalog=catalog)
+    event = make_attendance_marked_event()
+
+    with pytest.raises(ValueError):
+        engine.run("disabled_flow", event)
+
+
+def test_single_step_workflow_executes_and_succeeds():
+    store = InMemoryExecutionStore()
+    catalog = {
+        "one_step": Workflow(
+            workflow_id="one_step",
+            name="One Step",
+            steps=[WorkflowStep(1, "create_notification")],
+        )
+    }
+    engine = WorkflowEngine(store, catalog=catalog)
+    event = make_attendance_marked_event()
+
+    run = engine.run("one_step", event)
+
+    assert run.status == "success"
+    assert [a.action for a in run.action_results] == ["create_notification"]
+
+
+def test_multi_step_workflow_runs_steps_in_declared_order_even_if_catalog_is_unordered():
+    store = InMemoryExecutionStore()
+    # Steps declared out of order on purpose -- the engine must sort by
+    # WorkflowStep.order, not rely on list position.
+    catalog = {
+        "out_of_order": Workflow(
+            workflow_id="out_of_order",
+            name="Out Of Order",
+            steps=[
+                WorkflowStep(3, "record_execution"),
+                WorkflowStep(1, "create_notification"),
+                WorkflowStep(2, "send_email"),
+            ],
+        )
+    }
+    engine = WorkflowEngine(store, catalog=catalog)
+    event = make_attendance_marked_event()
+
+    run = engine.run("out_of_order", event)
+
+    assert run.status == "success"
+    assert [a.action for a in run.action_results] == [
+        "create_notification",
+        "send_email",
+        "record_execution",
+    ]
+
+
+# ---------- Action Executor ----------
+
+def test_unknown_action_returns_structured_failure_without_raising():
+    executor = ActionExecutor()
+    result = executor.execute("no_such_action", make_attendance_marked_event(), {})
+
+    assert isinstance(result, ActionResult)
+    assert result.status == "failed"
+    assert "unknown action" in result.error
+
+
+def test_known_action_executes_and_returns_structured_success():
+    executor = ActionExecutor()
+    context = {}
+    result = executor.execute("create_notification", make_attendance_marked_event(), context)
+
+    assert result.status == "success"
+    assert result.action == "create_notification"
+    assert "notification" in context
 
 
 # ---------- Dead-letter retry ----------

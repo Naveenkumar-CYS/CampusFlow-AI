@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.execution import ActionExecution, Execution
@@ -32,11 +33,31 @@ def get_by_event_id(db: Session, event_id: str) -> Execution | None:
 
 
 def create_running(db: Session, event_id: str, workflow_id: str, event_payload: str) -> Execution:
+    """Insert a new running Execution for event_id.
+
+    `event_id` is unique at the DB level (see app/models/execution.py), so
+    this is also the idempotency guard of last resort: if two callers race
+    past the application-level was_already_processed() check for the same
+    event_id, only one INSERT succeeds and the other hits a unique-
+    constraint violation here. Rather than let that IntegrityError bubble
+    up as a 500/crash, roll back and return whichever row actually won the
+    race -- the caller ends up pointed at the single Execution for this
+    event_id either way, which is the property idempotency is for.
+    """
     execution = Execution(
         event_id=event_id, workflow_id=workflow_id, status="running", event_payload=event_payload
     )
     db.add(execution)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        winner = get_by_event_id(db, event_id)
+        if winner is None:
+            # Constraint violation for a reason other than a duplicate
+            # event_id (or the row vanished) -- don't silently swallow it.
+            raise
+        return winner
     db.refresh(execution)
     return execution
 

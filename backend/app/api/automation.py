@@ -23,13 +23,16 @@ from app.schemas.automation import (
     TriggerEventResponse,
     TriggerFeePaidRequest,
 )
+from app.services.audit import AuditService
 
 router = APIRouter(prefix="/automation", tags=["automation"])
 
 
 def _run_consumer(db: Session, event) -> TriggerEventResponse:
     store = DbExecutionStore(db)
-    consumer = EventConsumer(RuleEngine(), WorkflowEngine(store, db=db), store)
+    audit = AuditService(db)
+    workflow_engine = WorkflowEngine(store, db=db, audit_service=audit)
+    consumer = EventConsumer(RuleEngine(), workflow_engine, store, audit_service=audit)
     result = consumer.consume(event)
 
     return TriggerEventResponse(
@@ -109,7 +112,7 @@ def list_dead_letters(limit: int = 50, db: Session = Depends(get_db)):
 @router.post("/executions/{event_id}/retry", response_model=TriggerEventResponse)
 def retry_dead_letter(event_id: str, db: Session = Depends(get_db)) -> TriggerEventResponse:
     store = DbExecutionStore(db)
-    engine = WorkflowEngine(store, db=db)
+    engine = WorkflowEngine(store, db=db, audit_service=AuditService(db))
     run = engine.retry(event_id)
     if run is None:
         raise HTTPException(

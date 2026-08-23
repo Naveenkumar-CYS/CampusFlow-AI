@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from app.automation.events import CanonicalEvent
 from app.automation.notifications import NotificationService
+from app.notifications.templates import TEMPLATE_REGISTRY as _MESSAGE_BUILDERS
 
 logger = logging.getLogger("campusflow.automation.actions")
 
@@ -33,29 +34,35 @@ class ActionResult:
 ActionFn = Callable[[CanonicalEvent, dict], dict]
 
 
-def _build_attendance_message(event: CanonicalEvent) -> tuple[str, str]:
-    pct = event.data.get("attendance_percentage")
-    subject_id = event.data.get("subject_id", "your course")
-    subject = "Low Attendance Warning"
-    body = (
-        f"Your attendance in {subject_id} is {pct}%, which is below the "
-        f"75% requirement. Please contact your department office."
+def _append_ai_advisory_note(body: str, context: dict) -> str:
+    """Append a clearly-labelled advisory line to the notification body
+    when an AI advisory result is available on the context (Stage 5B-2).
+
+    Smallest possible context/template change per Part 8 of the Stage
+    5B-2 brief: the template builders in app.notifications.templates are
+    untouched (they still only see the event); this action is the one
+    place that already assembles the final body, so it's the natural
+    place to fold in advisory context that came from the workflow's
+    shared `context` dict (the same mechanism used to hand send_email
+    the subject/body this function builds).
+
+    Deliberately advisory-only phrasing ("for staff review", never a
+    decision/action verb) and clearly labelled as such -- never claims
+    an intervention has happened. When AI is unavailable, says so
+    plainly rather than fabricating or omitting that fact silently.
+    """
+    advisory = context.get("ai_advisory")
+    if advisory is None:
+        return body
+
+    if not advisory.ai_available:
+        return f"{body}\n\n[Advisory only -- AI risk assessment unavailable for this run.]"
+
+    return (
+        f"{body}\n\n[Advisory only, for staff review -- not an automatic decision] "
+        f"AI risk assessment: {advisory.risk_level} "
+        f"(attendance pattern: {advisory.attendance_pattern}). {advisory.advisory_message}"
     )
-    return subject, body
-
-
-def _build_fee_message(event: CanonicalEvent) -> tuple[str, str]:
-    amount = event.data.get("amount")
-    fee_type = event.data.get("fee_type", "fee")
-    subject = "Fee Payment Confirmation"
-    body = f"We've received your {fee_type} payment of {amount}. Thank you."
-    return subject, body
-
-
-_MESSAGE_BUILDERS = {
-    "attendance.marked": _build_attendance_message,
-    "fee.paid": _build_fee_message,
-}
 
 
 def create_notification(event: CanonicalEvent, context: dict) -> dict:
@@ -63,15 +70,11 @@ def create_notification(event: CanonicalEvent, context: dict) -> dict:
     if builder is None:
         raise ValueError(f"no message builder registered for {event.event_type.value}")
     subject, body = builder(event)
+    body = _append_ai_advisory_note(body, context)
     context["notification"] = {"subject": subject, "body": body}
     return {"subject": subject}
 
 
-def send_email(event: CanonicalEvent, context: dict) -> dict:
-    notification = context.get("notification")
-    if notification is None:
-        raise RuntimeError("send_email requires create_notification to run first")
-    service: NotificationService = context["notification_service"]
 def _resolve_student_contact(event: CanonicalEvent, context: dict) -> tuple[str, str]:
     """Resolve (email, phone) for the student this event is about.
 
@@ -102,7 +105,18 @@ def send_email(event: CanonicalEvent, context: dict) -> dict:
     service: NotificationService = context["notification_service"]
     to, _ = _resolve_student_contact(event, context)
     result = service.send_email(to=to, subject=notification["subject"], body=notification["body"])
-    return {"to": to, "provider_message_id": result.provider_message_id, "status": result.status}
+    if result.status != "sent":
+        # Provider failure -> raise so the existing ActionExecutor retry /
+        # dead-letter machinery (Stage 3) handles it, same as any other
+        # action failure. The Notification Service never decides
+        # retry/workflow behavior itself.
+        raise RuntimeError(f"email provider failed: {result.error or 'unknown error'}")
+    return {
+        "to": to,
+        "provider": result.provider,
+        "provider_message_id": result.provider_message_id,
+        "status": result.status,
+    }
 
 
 def send_sms(event: CanonicalEvent, context: dict) -> dict:
@@ -112,7 +126,14 @@ def send_sms(event: CanonicalEvent, context: dict) -> dict:
     service: NotificationService = context["notification_service"]
     _, to = _resolve_student_contact(event, context)
     result = service.send_sms(to=to, body=notification["body"])
-    return {"to": to, "provider_message_id": result.provider_message_id, "status": result.status}
+    if result.status != "sent":
+        raise RuntimeError(f"sms provider failed: {result.error or 'unknown error'}")
+    return {
+        "to": to,
+        "provider": result.provider,
+        "provider_message_id": result.provider_message_id,
+        "status": result.status,
+    }
 
 
 def record_execution(event: CanonicalEvent, context: dict) -> dict:

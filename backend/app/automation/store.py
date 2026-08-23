@@ -100,7 +100,11 @@ class InMemoryExecutionStore:
 class DbExecutionStore:
     """Postgres-backed store. Idempotency relies on the unique index on
     automation_executions.event_id (see app/models/execution.py) as the
-    source of truth, not just the in-app check."""
+    source of truth, not just the in-app check -- was_already_processed()
+    can race between two callers, but repositories.execution.create_running
+    catches the resulting IntegrityError and returns the row that actually
+    won the insert, so a race never surfaces as an unhandled crash or a
+    second Execution row for the same event_id."""
 
     def __init__(self, db):
         from app.repositories import execution as execution_repo

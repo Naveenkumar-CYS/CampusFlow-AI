@@ -1,69 +1,45 @@
 """
-Notification Service.
+Notification Service -- backward-compatible import shim.
 
-    NotificationService
-           |
-     Provider interface
-       /         \\
-     Email        SMS
+The real implementation lives in app/notifications/ (providers.py,
+service.py, templates.py) as of Stage 4. This module is kept so the
+existing Stage 3 import path
 
-Mock providers only, for now (NOTIFICATION_MODE=mock). They log and
-return a realistic provider-style result shape so swapping in a real
-provider (SES, Twilio, whatever) later means writing a new Provider
-implementation, not touching the workflow/action layer above it.
+    from app.automation.notifications import NotificationService
+
+(used by app/automation/actions.py and app/automation/workflows.py)
+keeps working unchanged -- Stage 3 code was not touched to point at the
+new location. There is exactly one NotificationService implementation;
+nothing here is a second copy.
 """
 from __future__ import annotations
 
-import logging
-import uuid
-from dataclasses import dataclass
-from typing import Protocol
+from app.notifications.providers import (  # noqa: F401
+    HTTPSMSProvider,
+    MockEmailProvider,
+    MockSMSProvider,
+    NotificationProvider,
+    ProviderResult,
+    SMTPEmailProvider,
+)
+from app.notifications.service import (  # noqa: F401
+    NotificationConfigError,
+    NotificationService,
+    build_email_provider,
+    build_notification_service,
+    build_sms_provider,
+)
 
-logger = logging.getLogger("campusflow.automation.notifications")
-
-
-@dataclass
-class ProviderResult:
-    provider_message_id: str
-    status: str  # "sent" | "failed"
-    detail: str = ""
-
-
-class NotificationProvider(Protocol):
-    def send(self, *, to: str, subject: str, body: str) -> ProviderResult: ...
-
-
-class MockEmailProvider:
-    """Logs instead of sending. Same result shape a real provider would give."""
-
-    def send(self, *, to: str, subject: str, body: str) -> ProviderResult:
-        message_id = f"mock-email-{uuid.uuid4()}"
-        logger.info("MOCK EMAIL to=%s subject=%r id=%s", to, subject, message_id)
-        return ProviderResult(provider_message_id=message_id, status="sent")
-
-
-class MockSMSProvider:
-    def send(self, *, to: str, subject: str, body: str) -> ProviderResult:
-        message_id = f"mock-sms-{uuid.uuid4()}"
-        logger.info("MOCK SMS to=%s body=%r id=%s", to, body, message_id)
-        return ProviderResult(provider_message_id=message_id, status="sent")
-
-
-class NotificationService:
-    def __init__(
-        self,
-        email_provider: NotificationProvider | None = None,
-        sms_provider: NotificationProvider | None = None,
-    ):
-        # Defaults are the mock providers -- this is what NOTIFICATION_MODE=mock
-        # means in practice for local/hackathon dev. A settings-driven switch
-        # to real providers is exactly the kind of thing that plugs in here
-        # later without touching callers.
-        self._email = email_provider or MockEmailProvider()
-        self._sms = sms_provider or MockSMSProvider()
-
-    def send_email(self, *, to: str, subject: str, body: str) -> ProviderResult:
-        return self._email.send(to=to, subject=subject, body=body)
-
-    def send_sms(self, *, to: str, body: str) -> ProviderResult:
-        return self._sms.send(to=to, subject="", body=body)
+__all__ = [
+    "NotificationProvider",
+    "ProviderResult",
+    "MockEmailProvider",
+    "MockSMSProvider",
+    "SMTPEmailProvider",
+    "HTTPSMSProvider",
+    "NotificationService",
+    "NotificationConfigError",
+    "build_notification_service",
+    "build_email_provider",
+    "build_sms_provider",
+]

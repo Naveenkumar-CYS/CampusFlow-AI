@@ -39,6 +39,7 @@ from app.automation.events import CanonicalEvent, EventType
 from app.automation.rules import RuleEngine
 from app.automation.store import DbExecutionStore
 from app.automation.workflows import WorkflowEngine
+from app.services.audit import AuditService
 
 logger = logging.getLogger("campusflow.events.publisher")
 
@@ -99,7 +100,18 @@ def publish(
 
     try:
         store = DbExecutionStore(db)
-        consumer = EventConsumer(RuleEngine(), WorkflowEngine(store, db=db), store)
+        # Stage 6: wire the same AuditService used by the manual/dummy
+        # trigger endpoints (see app/api/automation.py) into the real
+        # producer path too -- otherwise a genuine domain event (e.g.
+        # fee.paid from services/fee.py) would silently bypass the audit
+        # trail entirely, while only the manual trigger endpoints stayed
+        # traceable. AuditService.record() never raises (see
+        # app/services/audit.py), so this can't turn a working publish()
+        # into a failing one.
+        audit = AuditService(db)
+        consumer = EventConsumer(
+            RuleEngine(), WorkflowEngine(store, db=db, audit_service=audit), store, audit_service=audit
+        )
         result = consumer.consume(canonical)
     except Exception:  # noqa: BLE001 -- automation failures must never bubble into A's response
         logger.exception(

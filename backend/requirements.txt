@@ -8,3 +8,13 @@ pydantic-settings==2.7.0
 email-validator==2.2.0
 pytest==8.3.4
 httpx==0.28.1
+
+# Redis Streams event bus (Stage 1: event bus foundation)
+redis==5.2.1
+
+# AI/ML foundation (Stage 5A: student risk-classification model).
+# scikit-learn is the classifier; joblib (a scikit-learn dependency, but
+# pinned directly since app/analytics/model.py imports it explicitly)
+# persists the trained artifact to disk.
+scikit-learn==1.8.0
+joblib==1.5.3

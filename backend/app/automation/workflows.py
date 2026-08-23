@@ -5,18 +5,50 @@ Orchestrates an ordered list of actions. Does NOT implement email/SMS
 itself -- that's actions.py's job via NotificationService. Wraps the run
 in the ExecutionStore so every run is traceable by event_id (Step 13) and
 so a duplicate event_id never re-runs a workflow (Step 11).
+
+Stage 5B-2: also computes the (optional) AI Advisory Service result for
+the event once per run and places it in the shared action context under
+"ai_advisory" -- see ai_context.py. This is advisory metadata only; the
+Workflow Engine's own step-sequencing/failure semantics are unchanged,
+and a missing/failed AI result never blocks or fails a workflow run.
+
+Stage 6: an optional `audit_service` records AI_ADVISORY, ACTION_EXECUTED
+/ NOTIFICATION_EXECUTED, and WORKFLOW_EXECUTED audit entries (see
+app/services/audit.py). Additive only -- defaults to None, and
+AuditService.record() never raises, so this can't change a WorkflowRun's
+status/action_results or block a run.
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
+from app.automation import ai_context
 from app.automation.actions import ActionExecutor, ActionResult
 from app.automation.events import CanonicalEvent
 from app.automation.notifications import NotificationService
 from app.automation.store import ExecutionRecord, ExecutionStore
+from app.schemas.audit import AuditStatus, AuditType
 
 logger = logging.getLogger("campusflow.automation.workflow")
+
+# Actions that represent an outbound notification, for the
+# ACTION_EXECUTED vs. NOTIFICATION_EXECUTED audit-type distinction
+# (Part 11). Everything else in the action catalog audits as
+# ACTION_EXECUTED.
+_NOTIFICATION_ACTIONS = frozenset({"send_email", "send_sms"})
+
+
+def _execution_pk(record: ExecutionRecord):
+    """The DB primary key of this run's Execution row, if the store
+    backing this run is DB-backed (see automation/store.py's
+    DbExecutionStore, which stashes it as record._db_execution) --
+    otherwise None. Lets audit records reference the specific
+    automation_executions row without the Workflow Engine needing to
+    know which ExecutionStore implementation it's running against."""
+    db_execution = getattr(record, "_db_execution", None)
+    return db_execution.id if db_execution is not None else None
 
 
 @dataclass(frozen=True)
@@ -72,12 +104,14 @@ class WorkflowEngine:
         notification_service: NotificationService | None = None,
         catalog: dict[str, Workflow] | None = None,
         db=None,
+        audit_service: Any | None = None,
     ):
         self._store = store
         self._executor = action_executor or ActionExecutor()
         self._notifications = notification_service or NotificationService()
         self._catalog = catalog or WORKFLOW_CATALOG
         self._db = db
+        self._audit = audit_service
 
     def run(self, workflow_id: str, event: CanonicalEvent) -> WorkflowRun:
         workflow = self._get_enabled_workflow(workflow_id)
@@ -105,7 +139,23 @@ class WorkflowEngine:
         return workflow
 
     def _execute_steps(self, workflow: Workflow, event: CanonicalEvent, record: ExecutionRecord) -> WorkflowRun:
-        context: dict = {"notification_service": self._notifications, "db": self._db}
+        # Rule match -> AI advisory result (Stage 5B-2): computed once per
+        # workflow run and handed to every action via the existing shared
+        # context dict, the same mechanism create_notification already
+        # uses to pass subject/body to send_email/send_sms. ai_context
+        # returns None for event types the AI Advisory Service isn't
+        # scoped to (see ai_context.py) and never raises, so this can't
+        # turn a deterministic workflow failure into an AI failure or
+        # vice versa -- the AI result is purely additive context.
+        context: dict = {
+            "notification_service": self._notifications,
+            "db": self._db,
+            "ai_advisory": ai_context.for_event(event),
+        }
+
+        if self._audit is not None:
+            self._record_ai_advisory_audit(event, workflow.workflow_id, record, context["ai_advisory"])
+
         action_results: list[ActionResult] = []
         run_status = "success"
 
@@ -113,6 +163,9 @@ class WorkflowEngine:
             result = self._executor.execute(step.action, event, context)
             action_results.append(result)
             self._store.record_action(record, step.action, result.status, result.attempts, result.error)
+
+            if self._audit is not None:
+                self._record_step_audit(event, workflow.workflow_id, record, step, result)
 
             if result.status == "success":
                 logger.info(
@@ -131,9 +184,69 @@ class WorkflowEngine:
         self._store.complete_execution(record, run_status, None if run_status == "success" else "one or more actions failed")
         logger.info("WORKFLOW %s event_id=%s workflow_id=%s", run_status.upper(), event.event_id, record.workflow_id)
 
+        if self._audit is not None:
+            self._audit.record(
+                audit_type=AuditType.WORKFLOW_EXECUTED,
+                status=AuditStatus.SUCCESS if run_status == "success" else AuditStatus.FAILED,
+                component="workflow_engine",
+                event_id=event.event_id,
+                workflow_id=workflow.workflow_id,
+                execution_id=_execution_pk(record),
+                event_type=event.event_type.value,
+                entity_type=event.aggregate_type,
+                entity_id=event.aggregate_id,
+                error_type="workflow_failed" if run_status != "success" else None,
+                error_message="one or more actions failed" if run_status != "success" else None,
+            )
+
         return WorkflowRun(
             event_id=event.event_id,
             workflow_id=workflow.workflow_id,
             status=run_status,
             action_results=action_results,
+        )
+
+    def _record_ai_advisory_audit(self, event, workflow_id, record, advisory) -> None:
+        if advisory is None:
+            return
+        self._audit.record(
+            audit_type=AuditType.AI_ADVISORY,
+            status=AuditStatus.SUCCESS if advisory.ai_available else AuditStatus.FAILED,
+            component="ai_advisory",
+            event_id=event.event_id,
+            workflow_id=workflow_id,
+            execution_id=_execution_pk(record),
+            event_type=event.event_type.value,
+            entity_type=event.aggregate_type,
+            entity_id=event.aggregate_id,
+            error_type="ai_unavailable" if not advisory.ai_available else None,
+            error_message=advisory.error,
+            # Small, structured, advisory-only metadata (Part 3/15) --
+            # never the model, training data, or raw student PII.
+            context={
+                "model_version": advisory.model_version,
+                "risk_level": advisory.risk_level,
+                "risk_score": advisory.risk_score,
+                "attendance_pattern": advisory.attendance_pattern,
+            },
+        )
+
+    def _record_step_audit(self, event, workflow_id, record, step, result: ActionResult) -> None:
+        audit_type = (
+            AuditType.NOTIFICATION_EXECUTED if step.action in _NOTIFICATION_ACTIONS else AuditType.ACTION_EXECUTED
+        )
+        self._audit.record(
+            audit_type=audit_type,
+            status=AuditStatus.SUCCESS if result.status == "success" else AuditStatus.FAILED,
+            component="notification_service" if step.action in _NOTIFICATION_ACTIONS else "action_executor",
+            event_id=event.event_id,
+            workflow_id=workflow_id,
+            execution_id=_execution_pk(record),
+            action=step.action,
+            event_type=event.event_type.value,
+            entity_type=event.aggregate_type,
+            entity_id=event.aggregate_id,
+            error_type="action_failed" if result.status != "success" else None,
+            error_message=result.error,
+            context={"attempts": result.attempts},
         )

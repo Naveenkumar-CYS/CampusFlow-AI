@@ -24,6 +24,36 @@ class Settings(BaseSettings):
     postgres_user: str = "postgres"
     postgres_password: str = ""
 
+    # Redis Streams event bus configuration. Defaults target a local
+    # docker-compose/dev Redis instance -- override via env vars (see
+    # .env.example) for staging/prod.
+    redis_url: str = "redis://localhost:6379/0"
+    redis_stream_name: str = "campusflow.events"
+    redis_consumer_group: str = "campusflow-automation"
+    redis_consumer_name: str = "automation-worker-1"
+
+    # Notification Service (Stage 4). "mock" (default) never touches the
+    # network -- the whole automation chain runs with zero credentials.
+    # "live" switches to real SMTP / SMS-webhook providers and requires
+    # their respective config below to be set (see app/notifications).
+    notification_provider_mode: str = "mock"
+
+    # SMTP (real email provider). Only required when
+    # NOTIFICATION_PROVIDER_MODE=live.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str | None = None
+    smtp_use_tls: bool = True
+
+    # SMS (real provider, generic HTTP webhook). Only required when
+    # NOTIFICATION_PROVIDER_MODE=live. Point this at whatever SMS
+    # gateway the deployment actually uses.
+    sms_webhook_url: str | None = None
+    sms_api_key: str | None = None
+    sms_from_number: str | None = None
+
     @property
     def sqlalchemy_database_url(self) -> str:
         if self.database_url:

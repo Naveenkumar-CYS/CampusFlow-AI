@@ -16,6 +16,7 @@ from app.models import student  # noqa: E402,F401  (registers Student on Base.me
 from app.models import admission  # noqa: E402,F401  (registers Admission on Base.metadata)
 from app.models import execution  # noqa: E402,F401  (registers Execution/ActionExecution on Base.metadata)
 from app.models import fee  # noqa: E402,F401  (registers Fee on Base.metadata)
+from app.models import audit  # noqa: E402,F401  (registers AuditRecord on Base.metadata -- Stage 6)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

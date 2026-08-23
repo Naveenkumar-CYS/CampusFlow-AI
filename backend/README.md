@@ -145,3 +145,81 @@ a duplicate Student; it's a no-op. The Student's `student_id` is
 deterministically derived from the admission's `application_number`
 (`APP2026001` → `STU2026001`) — see `API_CONTRACT.md` for details and
 its Day-2 limitations.
+
+## Event Bus (Stage 1 — Redis Streams foundation)
+
+The automation backbone (`app/automation/*`) previously only had two
+callers: the manual/dummy trigger endpoints (`app/api/automation.py`)
+and Person A's synchronous `publish()` (`app/events/publisher.py`).
+Stage 1 adds a real, swappable transport underneath those — a Redis
+Streams-backed event bus — without changing how the Rule Engine or
+Workflow Engine work.
+
+**Layout (`app/events/`):**
+
+- `bus.py` — the `EventBus` abstract interface (`publish`,
+  `create_consumer_group`, `consume`, `ack`) plus `InMemoryEventBus`, a
+  no-Redis-required fake used by tests and local dev.
+- `redis_bus.py` — `RedisStreamEventBus`, the real implementation using
+  `XADD` / `XGROUP CREATE` / `XREADGROUP` / `XACK`. This is the only
+  module in the codebase that imports `redis`.
+- `factory.py` — `get_redis_event_bus()` builds a configured
+  `RedisStreamEventBus` from `Settings` (see env vars below).
+- `runner.py` — `EventBusRunner`, a small bridge that reads
+  `StreamMessage`s off any `EventBus` and feeds well-formed ones into
+  the existing `EventConsumer.consume()`, then acks. Malformed messages
+  are logged and acked (dropped) rather than left pending forever.
+
+**What did *not* change:** `app/automation/consumer.py`,
+`rules.py`, `workflows.py`, `store.py`, `actions.py`, the manual trigger
+endpoints, and `app/events/publisher.py` are untouched. Both existing
+paths — the dummy-event HTTP endpoints and Person A's `publish()` —
+still call `EventConsumer.consume()` directly and work exactly as
+before. The Redis event bus is an additional, opt-in transport for this
+stage, not a replacement.
+
+**Config (env vars, see `.env.example`):**
+
+- `REDIS_URL` (default `redis://localhost:6379/0`)
+- `REDIS_STREAM_NAME` (default `campusflow.events`)
+- `REDIS_CONSUMER_GROUP` (default `campusflow-automation`)
+- `REDIS_CONSUMER_NAME` (default `automation-worker-1`)
+
+**Local Redis for dev/testing:**
+
+```bash
+docker run -p 6379:6379 -d redis:7
+```
+
+**Quick manual smoke test:**
+
+```python
+from app.events.factory import get_redis_event_bus
+from app.events.runner import EventBusRunner
+from app.automation.consumer import EventConsumer
+from app.automation.rules import RuleEngine
+from app.automation.workflows import WorkflowEngine
+from app.automation.store import InMemoryExecutionStore
+from app.automation.producer import make_attendance_marked_event
+
+bus = get_redis_event_bus()
+bus.create_consumer_group()
+bus.publish(make_attendance_marked_event(attendance_percentage=50))
+
+store = InMemoryExecutionStore()
+consumer = EventConsumer(RuleEngine(), WorkflowEngine(store), store)
+runner = EventBusRunner(bus, consumer)
+print(runner.run_once())
+```
+
+**Tests:** `tests/test_event_bus.py`. `InMemoryEventBus` tests always
+run. `RedisStreamEventBus` tests are integration tests against a real
+Redis and are skipped automatically (`pytest.mark.skipif`) if Redis
+isn't reachable at `REDIS_URL`.
+
+**Known limitations / not in scope for Stage 1:**
+
+- No long-running worker process (systemd/supervisor wiring) — `EventBusRunner.run_once()` is a single batch; looping it forever is future work.
+- No dead-letter stream for malformed/poison messages beyond logging + dropping — matches the existing `ExecutionStore`-based dead-letter handling for *valid* events that fail downstream, but a truly malformed stream entry has nowhere else to go yet.
+- No consumer-side claim/reclaim (`XCLAIM`/`XAUTOCLAIM`) for messages left pending by a crashed consumer — a future stage's concern.
+- The Rule/Workflow Engine redesign, AI model, notification redesign, and new ERP modules are explicitly out of scope per the Stage 1 brief.
