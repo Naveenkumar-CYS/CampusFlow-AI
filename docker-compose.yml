@@ -1,0 +1,72 @@
+services:
+
+  db:
+    image: postgres:16
+    container_name: campusflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: campusflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: campusflow-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build:
+      context: ./backend
+    container_name: campusflow-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:devpassword@db:5432/campusflow
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: campusflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpassword
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+      APP_ENV: development
+
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STREAM_NAME: campusflow.events
+      REDIS_CONSUMER_GROUP: campusflow-automation
+      REDIS_CONSUMER_NAME: automation-worker-1
+
+      NOTIFICATION_PROVIDER_MODE: mock
+
+      JWT_SECRET: change-this-to-a-local-development-secret
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+
+      PAYMENT_WEBHOOK_SECRET: change-this-to-a-local-development-webhook-secret
+
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: campusflow-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
