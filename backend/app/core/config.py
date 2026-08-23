@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     redis_consumer_group: str = "campusflow-automation"
     redis_consumer_name: str = "automation-worker-1"
 
+    # Transport used by app.events.publisher.publish() to hand a real
+    # domain event (fee.paid, attendance.marked, ...) to the automation
+    # backbone. "in_process" (default) runs EventConsumer synchronously
+    # in the same request -- zero moving parts, what every existing unit
+    # test exercises. "redis" instead pushes the CanonicalEvent onto the
+    # Redis Stream and returns immediately; a separate event-worker
+    # process (app/worker.py) is what actually consumes it. Integration/
+    # prod deployments should set AUTOMATION_TRANSPORT=redis.
+    automation_transport: str = "in_process"
+
     # Notification Service (Stage 4). "mock" (default) never touches the
     # network -- the whole automation chain runs with zero credentials.
     # "live" switches to real SMTP / SMS-webhook providers and requires

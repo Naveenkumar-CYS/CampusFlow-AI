@@ -17,6 +17,35 @@ from app.main import app
 client = TestClient(app)
 
 
+def _authenticate_as_admin() -> None:
+    """Test-suite setup only: /students, /fees, and /fees/{id}/pay are
+    RBAC-protected (require_roles), so every request in this file needs a
+    valid bearer token -- this file's helpers previously called these
+    endpoints with no Authorization header at all, which 401s before ever
+    reaching the fee/event logic under test. Registers a throwaway ADMIN
+    user directly via the service layer (no signup endpoint exists) and
+    attaches the resulting token as this module's default Authorization
+    header, same token-acquisition pattern as test_rbac.py.
+    """
+    from app.db.session import SessionLocal
+    from app.services import auth as auth_service
+
+    email = f"testsetup.fee.{uuid.uuid4().hex[:8]}@example.edu"
+    password = "test-only-password-123"
+    db = SessionLocal()
+    try:
+        auth_service.register_user(db, email=email, password=password, role="admin")
+    finally:
+        db.close()
+
+    resp = client.post("/auth/login", json={"email": email, "password": password})
+    assert resp.status_code == 200, resp.text
+    client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
+
+
+_authenticate_as_admin()
+
+
 def _suffix() -> str:
     return uuid.uuid4().hex[:6].upper()
 

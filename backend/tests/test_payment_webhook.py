@@ -21,6 +21,37 @@ client = TestClient(app)
 _SECRET = get_settings().payment_webhook_secret
 
 
+def _authenticate_as_admin() -> None:
+    """Test-suite setup only: /payments/webhook itself is deliberately
+    public (see app/api/payments.py), but this file's setup helpers
+    (_make_student/_make_fee) call /students and /fees, which ARE
+    RBAC-protected (require_roles) -- with no Authorization header at
+    all, those 401 before a fee to webhook against even exists. Registers
+    a throwaway ADMIN user directly via the service layer (no signup
+    endpoint exists) and attaches the resulting token as this module's
+    default Authorization header, same token-acquisition pattern as
+    test_rbac.py. Has no effect on the webhook calls themselves, which
+    don't look at Authorization at all.
+    """
+    from app.db.session import SessionLocal
+    from app.services import auth as auth_service
+
+    email = f"testsetup.paywebhook.{uuid.uuid4().hex[:8]}@example.edu"
+    password = "test-only-password-123"
+    db = SessionLocal()
+    try:
+        auth_service.register_user(db, email=email, password=password, role="admin")
+    finally:
+        db.close()
+
+    resp = client.post("/auth/login", json={"email": email, "password": password})
+    assert resp.status_code == 200, resp.text
+    client.headers["Authorization"] = f"Bearer {resp.json()['access_token']}"
+
+
+_authenticate_as_admin()
+
+
 def _suffix() -> str:
     return uuid.uuid4().hex[:6].upper()
 
