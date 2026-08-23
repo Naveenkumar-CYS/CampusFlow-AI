@@ -4,6 +4,14 @@ This is a draft for discussion with Person B. Nothing here is final until
 we both sign off on it. Treat every field name and event name as
 negotiable.
 
+> **Day 3 update:** `fee.paid` is no longer proposed-only — it is live.
+> `POST /fees/{fee_id}/pay` publishes a real event through
+> `app/events/publisher.py` into `app/automation/`'s `EventConsumer`
+> (in-process call, no external broker). See "Where event publication
+> would go" below, now updated to reflect what's actually implemented.
+> Everything else in this file (`student.*`, `admission.*`) is still
+> unimplemented — CRUD only for those, same as before.
+
 ## Envelope (shared by all events)
 
 ```json
@@ -82,14 +90,34 @@ negotiable.
 - **Producer:** Admission service.
 - **`data` payload:** `id`, `application_number`.
 
-## Where event publication would go (not implemented yet)
+## Where event publication actually lives now (Day 3)
 
-Both `student.py` and `admission.py` service modules are the natural
-publication points — e.g. inside `admission_service.update_admission`,
-right after the status transitions to `APPROVED`, is where an
-`admission.approved` event would be emitted once we have a transport.
-No publishing code exists yet; this is purely marking where it belongs
-architecturally so it's a small addition later rather than a rewrite.
+`app/events/publisher.py` is the single seam between Person A's domain
+services and Person B's `app/automation/` engine. It:
+
+1. Builds a small raw dict (`event_type`, `aggregate_id`, `student_id`,
+   `occurred_at`, `data`) — NOT the envelope above; that envelope is
+   this file's producer-facing proposal, while B's internal engine
+   contract (`app/automation/events.py::CanonicalEvent`) is the one
+   that's actually enforced. They're allowed to diverge; `publisher.py`
+   is where the reconciliation happens, not `adapter.py` directly, to
+   keep every domain service's call site to one line: `publish(db,
+   event_type=..., aggregate_id=..., student_id=..., data={...})`.
+2. Registers a `ProducerAdapter` mapping per event type — currently only
+   `"fee.paid"` is registered, matching B's existing
+   `EventType.FEE_PAID`. Hostel/exam/attendance mappings get added the
+   same way as those services are built (Phase 5-7), and
+   `student.created`/`admission.approved` mappings only once B adds
+   matching `EventType` members — no rule/workflow consumes those yet,
+   so there's nothing to wire them to.
+3. Calls the real `EventConsumer` in-process (same DB session/request),
+   post-commit only, and never raises — an automation failure is logged
+   and reported as `status: "automation_error"`, but never rolls back or
+   fails the domain write that already succeeded.
+
+`admission_service.update_admission`'s `APPROVED` transition is still
+the natural place for `admission.approved` once B has a rule for it —
+unchanged from the original plan below.
 
 ## Open questions for Person B
 

@@ -174,10 +174,83 @@ deleting an admission never deletes its linked Student.)
 
 ---
 
-## Known limitations — Day 2
+## Fee Endpoints (Day 3)
+
+### Fee ID format
+
+`FEE` + digits, e.g. `FEE2026001`. Caller-supplied at creation, same
+convention as `application_number`.
+
+### Create Fee
+```
+POST /fees
+```
+Request:
+```json
+{
+  "fee_id": "FEE2026099",
+  "student_id": "STU2026099",
+  "fee_type": "TUITION",
+  "amount": "50000.00",
+  "due_date": "2026-12-01"
+}
+```
+`student_id` is the human-readable Student code (not the internal UUID),
+same as everywhere else in this contract.
+
+Response `201 Created`: Fee object with `status: "PENDING"`,
+`payment_reference: null`, `paid_at: null`.
+Errors: `409` on duplicate `fee_id`. `404` if `student_id` doesn't exist.
+
+### Get / List Fee
+```
+GET /fees/{fee_id}
+GET /fees
+```
+Same shape/behavior as Student and Admission list/get.
+
+### Update Fee
+```
+PATCH /fees/{fee_id}
+```
+Any subset of `fee_type`, `amount`, `due_date`. **Does not accept
+`status` or payment fields** — those only change via `/pay` below, so a
+fee can never be marked paid except through a validated state
+transition.
+
+### Pay Fee
+```
+POST /fees/{fee_id}/pay
+```
+Request:
+```json
+{ "payment_reference": "TXN123456" }
+```
+Validates the current state, then commits `status: PAID`,
+`payment_reference`, `paid_at`, and — only after that commit succeeds —
+publishes a real `fee.paid` domain event into the automation backbone.
+
+Response `200 OK`: updated Fee object.
+Errors:
+- `409` if the fee is already `PAID` or is `CANCELLED` (no valid
+  transition from either state).
+- `409` if `payment_reference` has already been used on a different fee
+  (duplicate-payment guard).
+- `404` if the fee doesn't exist.
+
+### Delete Fee
+```
+DELETE /fees/{fee_id}
+```
+`204 No Content`. `404` if not found.
+
+---
+
+## Known limitations — Day 3
 
 - No pagination on list endpoints.
-- No authentication/authorization — anyone can call any endpoint.
+- No authentication/authorization — anyone can call any endpoint. This
+  is the next priority (JWT + RBAC), not yet built.
 - Admissions cannot be manually linked to a pre-existing Student — the
   only path to a linked `student_id` is the auto-create-on-approval flow.
   If you need "link this admission to an existing student" (e.g. a
@@ -185,5 +258,11 @@ deleting an admission never deletes its linked Student.)
 - `student_id` derivation from `application_number` (APP→STU prefix swap)
   is a Day-2 simplification. If application numbers ever don't start with
   `APP`, ask the backend team before relying on the derived format.
-- No events are actually published yet (see EVENT_CONTRACT_PROPOSAL.md) —
-  Person C should poll/re-fetch rather than expect a webhook/notification.
+- `student.*` and `admission.*` events are still NOT published (see
+  EVENT_CONTRACT_PROPOSAL.md) — only `fee.paid` is live so far, via
+  `app/events/publisher.py`. Hostel/exam/attendance events land as those
+  services get built.
+- `/fees/{fee_id}/pay` is a direct-call payment confirmation endpoint,
+  not the external payment gateway webhook — that's a separate,
+  not-yet-built endpoint (Phase 12) that will call into the same
+  `pay_fee()` service function once a real/mock provider exists.
