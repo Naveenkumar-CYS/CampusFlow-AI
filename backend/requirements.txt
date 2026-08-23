@@ -20,3 +20,5 @@ redis==5.2.1
 # persists the trained artifact to disk.
 scikit-learn==1.8.0
 joblib==1.5.3
+cryptography
+cryptography==44.0.2
