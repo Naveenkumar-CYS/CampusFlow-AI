@@ -1,7 +1,13 @@
-# CampusFlow AI — Backend (Day 1)
+# CampusFlow AI — Backend
 
-Student Management service for SIH25103. Day-1 scope only: health check,
-Postgres connectivity, Student schema/migration, Student CRUD.
+Student Management service for SIH25103. Started as a Day-1 foundation
+(health check, Postgres connectivity, Student CRUD) and has since grown
+Admissions/Fee/Hostel/Examination/Attendance domain services, JWT+RBAC
+auth, a Redis Streams event bus + standalone worker, AI advisory
+analytics, and the Person E hardening pass (rate limiting, encryption
+at rest, backup/restore, secrets hardening). See the root `README.md`
+for the full-stack quick start (Docker Compose, worker, frontend); this
+file stays focused on backend-only details.
 
 ## Stack
 
@@ -217,9 +223,52 @@ run. `RedisStreamEventBus` tests are integration tests against a real
 Redis and are skipped automatically (`pytest.mark.skipif`) if Redis
 isn't reachable at `REDIS_URL`.
 
-**Known limitations / not in scope for Stage 1:**
+**Event worker (Person E, Step 2)** — `app/worker.py` is the standalone
+long-running process that loops `EventBusRunner.run_once()` forever,
+turning the Stage-1 event bus into something actually usable end to
+end. Start it (from `backend/`, with `AUTOMATION_TRANSPORT=redis` set):
 
-- No long-running worker process (systemd/supervisor wiring) — `EventBusRunner.run_once()` is a single batch; looping it forever is future work.
+```bash
+python -m app.worker
+```
+
+It exits cleanly on SIGINT/SIGTERM after finishing the in-flight batch.
+`docker-compose.yml` runs this automatically as the `worker` service.
+See "Automation Transport" in the root `README.md` for how this relates
+to `AUTOMATION_TRANSPORT=in_process` vs `redis`.
+
+**Known limitations:**
+
 - No dead-letter stream for malformed/poison messages beyond logging + dropping — matches the existing `ExecutionStore`-based dead-letter handling for *valid* events that fail downstream, but a truly malformed stream entry has nowhere else to go yet.
 - No consumer-side claim/reclaim (`XCLAIM`/`XAUTOCLAIM`) for messages left pending by a crashed consumer — a future stage's concern.
-- The Rule/Workflow Engine redesign, AI model, notification redesign, and new ERP modules are explicitly out of scope per the Stage 1 brief.
+
+## Security hardening (Person E)
+
+**Rate limiting** (`app/core/rate_limit.py`) — dependency-level checks on
+`POST /auth/login` (per-account + per-IP) and `POST /payments/webhook`
+(per-IP). Backed by Redis (reuses `REDIS_URL`, same instance as the event
+bus), with an automatic in-memory fallback if Redis is unreachable. All
+limits are configurable via env vars — see `.env.example`
+(`RATE_LIMIT_*`) — and can be disabled entirely with
+`RATE_LIMIT_ENABLED=false`. Exceeding a limit returns `429 Too Many
+Requests` with a `Retry-After` header. Tests: `tests/test_rate_limit.py`.
+
+**Encryption at rest** (`app/core/encryption.py`) — `Student.phone` is
+encrypted at rest via the `EncryptedString` SQLAlchemy type (Fernet,
+`ENCRYPTION_KEY` env var). It was the only field in the current schema
+that is genuinely sensitive PII *and* never searched/filtered/joined on
+— every other candidate (`email`, `student_id`, names, IDs) is either a
+lookup key or not sensitive enough to justify losing that. See the
+migration `d2a6e9f1c8b3_widen_students_phone_for_encryption` (widens the
+column to fit ciphertext).
+
+**Backup / recovery** (`scripts/backup_db.sh`, `scripts/restore_db.sh`) —
+plain `pg_dump`/`pg_restore` wrappers, connection fully env-driven (same
+`POSTGRES_*`/`DATABASE_URL` vars as the app), no hardcoded credentials.
+See the scripts themselves for usage examples (local and via the
+docker-compose `db` container).
+
+**Secrets/config** — `.env.example` now also documents `ENCRYPTION_KEY`
+and the new `RATE_LIMIT_*` vars. Added a root `.gitignore` and a backend
+`.dockerignore` so `.env`/backup dumps are never accidentally committed
+or baked into the Docker image.

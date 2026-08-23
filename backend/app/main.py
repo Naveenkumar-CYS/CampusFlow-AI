@@ -12,10 +12,20 @@ protected router depends on. /health and /auth/login stay public by
 design (liveness check and the endpoint that issues tokens).
 """
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import admissions, attendance, auth, analytics, audit, automation, examinations, fees, health, hostel, payments, students
+from app.core.config import get_settings
 
 app = FastAPI(title="CampusFlow AI — Student Management Service")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(health.router)
 app.include_router(auth.router)

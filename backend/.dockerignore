@@ -1,0 +1,16 @@
+# Never bake real secrets or local artifacts into the image
+.env
+.env.*
+!.env.example
+backups/
+*.dump
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+.git/
+.gitignore
+README.md

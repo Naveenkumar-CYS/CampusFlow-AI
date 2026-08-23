@@ -17,7 +17,12 @@ from app.automation.actions import (
     send_email,
     send_sms,
 )
-from app.automation.producer import make_attendance_marked_event, make_fee_paid_event
+from app.automation.producer import (
+    make_attendance_marked_event,
+    make_exam_registered_event,
+    make_fee_paid_event,
+    make_hostel_allocated_event,
+)
 from app.notifications.providers import (
     HTTPSMSProvider,
     MockEmailProvider,
@@ -34,7 +39,9 @@ from app.notifications.service import (
 )
 from app.notifications.templates import (
     build_attendance_warning_message,
+    build_exam_registration_confirmation_message,
     build_fee_confirmation_message,
+    build_hostel_allocation_confirmation_message,
 )
 
 
@@ -246,6 +253,28 @@ def test_fee_confirmation_template_uses_event_data():
     assert subject == "Fee Payment Confirmation"
     assert "2500.5" in body
     assert "hostel" in body
+
+
+def test_hostel_allocation_template_uses_event_data():
+    event = make_hostel_allocated_event(
+        student_id="STU-321", hostel_code="HOSTEL-B", room_number="204"
+    )
+    subject, body = build_hostel_allocation_confirmation_message(event)
+
+    assert subject == "Hostel Allocation Confirmation"
+    assert "HOSTEL-B" in body
+    assert "204" in body
+
+
+def test_exam_registration_template_uses_event_data():
+    event = make_exam_registered_event(
+        student_id="STU-654", exam_code="EXAM-202", subject="Operating Systems"
+    )
+    subject, body = build_exam_registration_confirmation_message(event)
+
+    assert subject == "Exam Registration Confirmation"
+    assert "EXAM-202" in body
+    assert "Operating Systems" in body
 
 
 def test_templates_do_not_hardcode_one_students_details():

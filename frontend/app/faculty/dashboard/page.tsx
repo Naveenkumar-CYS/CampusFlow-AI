@@ -1,91 +1,111 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { PortalHeader, LoadingState, ErrorState } from "../../../components/portal-ui";
+import { useAuthGuard } from "../../../lib/auth";
+import { listAttendance, listStudents } from "../../../lib/services";
+import { ApiError } from "../../../lib/api";
+
+type Summary =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; studentCount: number; todayMarked: number; todayPresentPct: number | null };
+
 export default function FacultyDashboard() {
-  const cards = [
-    {
-      title: "Students",
-      value: "128",
-      description: "Students assigned",
-      href: "/faculty/students",
-    },
-    {
-      title: "Attendance",
-      value: "92%",
-      description: "Today's attendance",
-      href: "/faculty/attendance",
-    },
-    {
-      title: "Pending Tasks",
-      value: "7",
-      description: "Tasks requiring attention",
-    },
-    {
-      title: "Alerts",
-      value: "3",
-      description: "Student alerts",
-    },
-  ];
+  const guard = useAuthGuard(["faculty"]);
+  const [summary, setSummary] = useState<Summary>({ status: "loading" });
+
+  useEffect(() => {
+    if (guard.status !== "ready") return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const [students, attendance] = await Promise.all([listStudents(), listAttendance()]);
+        const today = new Date().toISOString().slice(0, 10);
+        const todayRecords = attendance.filter((r) => r.session_date === today);
+        const present = todayRecords.filter((r) => r.status === "PRESENT" || r.status === "LATE").length;
+
+        if (!cancelled) {
+          setSummary({
+            status: "ready",
+            studentCount: students.length,
+            todayMarked: todayRecords.length,
+            todayPresentPct: todayRecords.length ? Math.round((present / todayRecords.length) * 100) : null,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSummary({
+            status: "error",
+            message: err instanceof ApiError ? err.message : "Failed to load dashboard data.",
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [guard.status]);
+
+  if (guard.status !== "ready") {
+    return (
+      <main className="min-h-screen bg-slate-950 text-white">
+        <div className="mx-auto max-w-7xl px-6 py-10">
+          <LoadingState label="Checking your session..." />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      <nav className="border-b border-slate-800 px-6 py-5">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">
-              Campus<span className="text-blue-500">Flow</span> AI
-            </h1>
-            <p className="text-sm text-slate-400">Faculty Portal</p>
-          </div>
-
-          <a
-            href="/login"
-            className="rounded-lg border border-slate-700 px-4 py-2 hover:bg-slate-800"
-          >
-            Logout
-          </a>
-        </div>
-      </nav>
+      <PortalHeader portal="faculty" active="dashboard" />
 
       <section className="mx-auto max-w-7xl px-6 py-10">
         <p className="text-slate-400">Welcome back,</p>
-        <h2 className="mt-1 text-3xl font-bold">Faculty Dashboard</h2>
+        <h2 className="mt-1 text-3xl font-bold">{guard.user.email}</h2>
 
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {cards.map((card) => (
-            <a
-              key={card.title}
-              href={card.href}
-              className="rounded-xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-1 hover:border-blue-500"
-            >
-              <p className="text-slate-400">{card.title}</p>
+        {summary.status === "loading" && <LoadingState label="Loading dashboard data..." />}
+        {summary.status === "error" && <ErrorState message={summary.message} />}
 
-              <p className="mt-3 text-3xl font-bold text-blue-500">
-                {card.value}
-              </p>
-
-              <p className="mt-2 text-sm text-slate-500">
-                {card.description}
-              </p>
-            </a>
-          ))}
-        </div>
-
-        <div className="mt-10 rounded-xl border border-blue-500/30 bg-blue-500/10 p-6">
-          <h3 className="text-xl font-semibold text-blue-400">
-            AI Advisory
-          </h3>
-
-          <p className="mt-3 text-slate-300">
-            5 students have attendance below the recommended threshold.
-            Review their attendance and take appropriate action.
-          </p>
-
-          <a
-            href="/faculty/attendance"
-            className="mt-5 inline-block rounded-lg bg-blue-600 px-5 py-2.5 font-medium hover:bg-blue-700"
-          >
-            Review Attendance
-          </a>
-        </div>
+        {summary.status === "ready" && (
+          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard title="Students" value={String(summary.studentCount)} description="Total students in the system" />
+            <StatCard
+              title="Today's Attendance"
+              value={summary.todayPresentPct !== null ? `${summary.todayPresentPct}%` : "Not marked yet"}
+              description={`${summary.todayMarked} record(s) marked today`}
+            />
+            <NavCard title="Students" description="Browse the student directory" href="/faculty/students" />
+            <NavCard title="Mark Attendance" description="Record today's attendance" href="/faculty/attendance" />
+          </div>
+        )}
       </section>
     </main>
+  );
+}
+
+function StatCard({ title, value, description }: { title: string; value: string; description: string }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
+      <p className="text-slate-400">{title}</p>
+      <p className="mt-3 text-3xl font-bold text-blue-500">{value}</p>
+      <p className="mt-2 text-sm text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function NavCard({ title, description, href }: { title: string; description: string; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-1 hover:border-blue-500"
+    >
+      <p className="text-slate-400">{title}</p>
+      <p className="mt-2 text-sm text-slate-500">{description}</p>
+    </Link>
   );
 }

@@ -1,5 +1,5 @@
-import { StaffPortal } from "@/components/staff-portal";
+import { WardenPortal } from "@/components/warden-portal";
 
 export default function WardenDashboard() {
-  return <StaffPortal portal="warden" />;
+  return <WardenPortal />;
 }

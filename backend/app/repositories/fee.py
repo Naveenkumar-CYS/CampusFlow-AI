@@ -37,6 +37,14 @@ def list_all(db: Session) -> list[Fee]:
     return list(db.scalars(select(Fee).order_by(Fee.created_at)))
 
 
+def list_by_student(db: Session, student_pk: uuid.UUID) -> list[Fee]:
+    return list(
+        db.scalars(
+            select(Fee).where(Fee.student_id == student_pk).order_by(Fee.due_date)
+        )
+    )
+
+
 def update(db: Session, fee: Fee, changes: dict) -> Fee:
     for field, value in changes.items():
         setattr(fee, field, value)

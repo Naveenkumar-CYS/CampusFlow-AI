@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.rbac import Role, enforce_own_student_record, require_roles
+from app.core.rbac import Role, enforce_own_student_record, get_owned_student, require_roles
 from app.db.session import get_db
 from app.schemas.auth import CurrentUser
 from app.schemas.fee import FeeCreate, FeePayRequest, FeeRead, FeeUpdate
@@ -10,6 +10,32 @@ from app.services import fee as fee_service
 router = APIRouter(prefix="/fees", tags=["fees"])
 
 _STAFF = {Role.ADMIN, Role.ACCOUNTS}
+
+
+@router.get(
+    "/me",
+    response_model=list[FeeRead],
+    dependencies=[Depends(require_roles(Role.STUDENT))],
+)
+def list_own_fees(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_roles(Role.STUDENT)),
+) -> list[FeeRead]:
+    """Fees for the authenticated STUDENT only. The student_id is always
+    resolved server-side from the JWT identity (via get_owned_student) —
+    the client never supplies one, so there is no way to request another
+    student's fees through this route.
+
+    Declared before GET /{fee_id} so "me" is matched here, not swallowed
+    as a path parameter.
+    """
+    student = get_owned_student(db, current_user)
+    if student is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No student record is linked to this account",
+        )
+    return fee_service.list_fees_for_student(db, student.id)
 
 
 @router.post(

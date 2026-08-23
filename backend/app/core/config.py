@@ -15,6 +15,18 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
 
+    # CORS (Person E, Step 2) -- comma-separated list of allowed browser
+    # origins. Defaults to the local Next.js dev server; the frontend and
+    # backend run on different ports/origins even in local dev, so this
+    # was required for the browser to be able to call the API at all, not
+    # just for a cloud deployment. Set to the deployed frontend's real
+    # origin(s) in staging/prod.
+    cors_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
     # If DATABASE_URL is provided directly, it wins. Otherwise we build it
     # from the individual POSTGRES_* pieces — useful when different team
     # members run Postgres with different host/port setups locally.
@@ -76,6 +88,24 @@ class Settings(BaseSettings):
     sms_webhook_url: str | None = None
     sms_api_key: str | None = None
     sms_from_number: str | None = None
+
+    # Rate limiting (Person E). Backed by Redis (see app/core/rate_limit.py),
+    # falling back to an in-memory per-process counter if Redis is down.
+    # Defaults are generous enough not to trip up normal local/dev/test
+    # traffic -- tighten per-account/per-IP maxes via env vars for a real
+    # deployment.
+    rate_limit_enabled: bool = True
+
+    # POST /auth/login. per_account is the real brute-force defense
+    # (keyed on the submitted email); per_ip is a coarser ceiling on top.
+    rate_limit_login_per_account_max: int = 8
+    rate_limit_login_per_ip_max: int = 60
+    rate_limit_login_window_seconds: int = 60
+
+    # POST /payments/webhook. Per-IP only -- the caller is a payment
+    # provider's servers, not an individual account.
+    rate_limit_webhook_per_ip_max: int = 120
+    rate_limit_webhook_window_seconds: int = 60
 
     @property
     def sqlalchemy_database_url(self) -> str:

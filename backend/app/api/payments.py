@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.rate_limit import enforce_webhook_rate_limit
 from app.db.session import get_db
 from app.schemas.payment import PaymentWebhookPayload, PaymentWebhookResult
 from app.services import fee as fee_service
@@ -33,7 +34,11 @@ async def _raw_body(request: Request) -> bytes:
     return await request.body()
 
 
-@router.post("/webhook", response_model=PaymentWebhookResult)
+@router.post(
+    "/webhook",
+    response_model=PaymentWebhookResult,
+    dependencies=[Depends(enforce_webhook_rate_limit)],
+)
 def payment_webhook(
     raw_body: bytes = Depends(_raw_body),
     x_webhook_signature: str | None = Header(default=None),

@@ -46,7 +46,40 @@ def build_fee_confirmation_message(event: "CanonicalEvent") -> tuple[str, str]:
     return subject, body
 
 
+def build_hostel_allocation_confirmation_message(event: "CanonicalEvent") -> tuple[str, str]:
+    """Hostel allocation confirmation. Room/hostel details come straight
+    from the event payload published by services/hostel.py's
+    create_allocation() -- see app/events/publisher.py's
+    _adapt_hostel_allocated for the exact field names."""
+    hostel_code = event.data.get("hostel_code", "your hostel")
+    room_number = event.data.get("room_number", "your room")
+    subject = "Hostel Allocation Confirmation"
+    body = (
+        f"You have been allocated room {room_number} in {hostel_code}. "
+        f"Please contact the warden's office for check-in details."
+    )
+    return subject, body
+
+
+def build_exam_registration_confirmation_message(event: "CanonicalEvent") -> tuple[str, str]:
+    """Exam registration confirmation. Exam code/subject/schedule come
+    straight from the event payload published by services/examination.py's
+    register_student() -- see app/events/publisher.py's
+    _adapt_exam_registered for the exact field names."""
+    exam_code = event.data.get("exam_code", "your exam")
+    subject_name = event.data.get("subject", "your subject")
+    scheduled_at = event.data.get("scheduled_at", "the scheduled date")
+    subject = "Exam Registration Confirmation"
+    body = (
+        f"You are registered for {exam_code} ({subject_name}), "
+        f"scheduled at {scheduled_at}."
+    )
+    return subject, body
+
+
 TEMPLATE_REGISTRY: dict[str, TemplateFn] = {
     "attendance.marked": build_attendance_warning_message,
     "fee.paid": build_fee_confirmation_message,
+    "hostel.allocated": build_hostel_allocation_confirmation_message,
+    "exam.registered": build_exam_registration_confirmation_message,
 }

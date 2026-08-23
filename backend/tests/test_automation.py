@@ -10,7 +10,12 @@ import pytest
 from app.automation.actions import ACTION_REGISTRY, ActionExecutor, ActionResult, create_notification
 from app.automation.consumer import EventConsumer
 from app.automation.events import CanonicalEvent, EventValidationError
-from app.automation.producer import make_attendance_marked_event, make_fee_paid_event
+from app.automation.producer import (
+    make_attendance_marked_event,
+    make_exam_registered_event,
+    make_fee_paid_event,
+    make_hostel_allocated_event,
+)
 from app.automation.rules import Rule, RuleEngine
 from app.automation.store import InMemoryExecutionStore
 from app.automation.workflows import Workflow, WorkflowEngine, WorkflowStep
@@ -49,6 +54,55 @@ def test_full_chain_fee_paid_triggers_confirmation():
     assert result.status == "workflow_triggered"
     assert result.workflow_run.workflow_id == "fee_payment_confirmation"
     assert result.workflow_run.status == "success"
+
+
+def test_full_chain_hostel_allocated_triggers_confirmation():
+    consumer, _ = make_consumer()
+    event = make_hostel_allocated_event(hostel_code="HOSTEL-A", room_number="101")
+
+    result = consumer.consume(event)
+
+    assert result.status == "workflow_triggered"
+    assert result.workflow_run.workflow_id == "hostel_allocation_confirmation"
+    assert result.workflow_run.status == "success"
+
+    action_names = [a.action for a in result.workflow_run.action_results]
+    assert action_names == ["create_notification", "send_email", "record_execution"]
+    assert all(a.status == "success" for a in result.workflow_run.action_results)
+
+
+def test_full_chain_exam_registered_triggers_confirmation():
+    consumer, _ = make_consumer()
+    event = make_exam_registered_event(exam_code="EXAM-101", subject="Data Structures")
+
+    result = consumer.consume(event)
+
+    assert result.status == "workflow_triggered"
+    assert result.workflow_run.workflow_id == "exam_registration_confirmation"
+    assert result.workflow_run.status == "success"
+
+    action_names = [a.action for a in result.workflow_run.action_results]
+    assert action_names == ["create_notification", "send_email", "record_execution"]
+    assert all(a.status == "success" for a in result.workflow_run.action_results)
+
+
+def test_duplicate_hostel_allocated_event_id_is_not_reprocessed():
+    consumer, store = make_consumer()
+    event = make_hostel_allocated_event(aggregate_id="ALLOC-DUP")
+    duplicate = CanonicalEvent(
+        event_id=event.event_id,
+        event_type=event.event_type,
+        aggregate_type=event.aggregate_type,
+        aggregate_id=event.aggregate_id,
+        student_id=event.student_id,
+        data=event.data,
+    )
+
+    first = consumer.consume(event)
+    second = consumer.consume(duplicate)
+
+    assert first.status == "workflow_triggered"
+    assert second.status == "skipped_duplicate"
 
 
 # ---------- Rule matching ----------

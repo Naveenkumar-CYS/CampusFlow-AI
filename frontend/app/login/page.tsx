@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, ApiError } from "../../lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -31,24 +31,33 @@ export default function LoginPage() {
 
       const user = await apiFetch("/auth/me");
 
-     const destination: Record<string, string> = {
-  STUDENT: "/student/dashboard",
-  FACULTY: "/faculty/dashboard",
-  ADMIN: "/admin/dashboard",
-  ACCOUNTS: "/accounts/dashboard",
-  WARDEN: "/warden/dashboard",
-  EXAM_OFFICER: "/exam/dashboard",
-};
+      // Backend issues/returns roles lowercase (see app/core/rbac.py's
+      // Role enum values: "student", "faculty", "admin", "accounts",
+      // "warden", "exam_officer") -- match that here.
+      const destination: Record<string, string> = {
+        student: "/student/dashboard",
+        faculty: "/faculty/dashboard",
+        admin: "/admin/dashboard",
+        accounts: "/accounts/dashboard",
+        warden: "/warden/dashboard",
+        exam_officer: "/exam/dashboard",
+      };
 
-const path = destination[user.role];
+      const path = destination[user.role];
 
-if (path) {
-  router.push(path);
-} else {
-  setError("This portal is not assigned to your role.");
-}
+      if (path) {
+        router.push(path);
+      } else {
+        setError("This portal is not assigned to your role.");
+      }
     } catch (err) {
-      setError("Invalid email or password.");
+      if (err instanceof ApiError && err.status === 401) {
+        setError("Invalid email or password.");
+      } else if (err instanceof ApiError) {
+        setError(err.message || "Something went wrong. Please try again.");
+      } else {
+        setError("Could not reach the server. Please try again.");
+      }
     } finally {
       setLoading(false);
     }

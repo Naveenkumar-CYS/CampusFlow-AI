@@ -49,8 +49,16 @@ def _fee_paid_always(data: dict) -> bool:
     return True
 
 
+def _hostel_allocated_always(data: dict) -> bool:
+    return True
+
+
+def _exam_registered_always(data: dict) -> bool:
+    return True
+
+
 # The rule catalog. Matching is by (priority desc, catalog order) --
-# these two rules don't overlap in event_type today so ordering/priority
+# these rules don't overlap in event_type today so ordering/priority
 # is moot between them, but keep rules for the same event_type mutually
 # exclusive where possible, and set an explicit priority instead of
 # relying on position if they ever do overlap.
@@ -69,6 +77,22 @@ DEFAULT_RULES: list[Rule] = [
         event_type=EventType.FEE_PAID,
         condition=_fee_paid_always,
         workflow_id="fee_payment_confirmation",
+        enabled=True,
+    ),
+    Rule(
+        id="RULE-003",
+        name="Hostel allocation triggers confirmation",
+        event_type=EventType.HOSTEL_ALLOCATED,
+        condition=_hostel_allocated_always,
+        workflow_id="hostel_allocation_confirmation",
+        enabled=True,
+    ),
+    Rule(
+        id="RULE-004",
+        name="Exam registration triggers confirmation",
+        event_type=EventType.EXAM_REGISTERED,
+        condition=_exam_registered_always,
+        workflow_id="exam_registration_confirmation",
         enabled=True,
     ),
 ]

@@ -43,6 +43,12 @@ services:
       REDIS_CONSUMER_GROUP: campusflow-automation
       REDIS_CONSUMER_NAME: automation-worker-1
 
+      # Redis is the integrated/demo transport: the backend publishes
+      # domain events onto the stream instead of running automation
+      # in-process, so the `worker` service below is the thing that
+      # actually consumes them. See "Automation Transport" in the README.
+      AUTOMATION_TRANSPORT: redis
+
       NOTIFICATION_PROVIDER_MODE: mock
 
       JWT_SECRET: change-this-to-a-local-development-secret
@@ -51,8 +57,56 @@ services:
 
       PAYMENT_WEBHOOK_SECRET: change-this-to-a-local-development-webhook-secret
 
+      # Rate limiting (Person E, Step 1) -- defaults are fine for local
+      # dev; override per environment if needed (see backend/.env.example).
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_LOGIN_PER_ACCOUNT_MAX: "8"
+      RATE_LIMIT_LOGIN_PER_IP_MAX: "60"
+      RATE_LIMIT_LOGIN_WINDOW_SECONDS: "60"
+      RATE_LIMIT_WEBHOOK_PER_IP_MAX: "120"
+      RATE_LIMIT_WEBHOOK_WINDOW_SECONDS: "60"
+
     ports:
       - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+    container_name: campusflow-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:devpassword@db:5432/campusflow
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: campusflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpassword
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+      APP_ENV: development
+
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STREAM_NAME: campusflow.events
+      REDIS_CONSUMER_GROUP: campusflow-automation
+      REDIS_CONSUMER_NAME: automation-worker-1
+
+      # Same transport as `backend` -- this process is what actually
+      # drains the stream `backend` publishes onto. Kept in sync
+      # deliberately; the worker itself only warns (doesn't fail) if
+      # this drifts from "redis".
+      AUTOMATION_TRANSPORT: redis
+
+      NOTIFICATION_PROVIDER_MODE: mock
+
+      JWT_SECRET: change-this-to-a-local-development-secret
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: 60
+
+      PAYMENT_WEBHOOK_SECRET: change-this-to-a-local-development-webhook-secret
     depends_on:
       - db
       - redis

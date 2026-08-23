@@ -5,6 +5,7 @@ from sqlalchemy import Integer, String, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.encryption import EncryptedString
 from app.db.base import Base
 
 
@@ -28,7 +29,15 @@ class Student(Base):
     department: Mapped[str] = mapped_column(String(120), nullable=False)
     course: Mapped[str] = mapped_column(String(120), nullable=False)
     enrollment_year: Mapped[int] = mapped_column(Integer, nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Encrypted at rest (Person E, Step 2): PII, not unique, not
+    # filtered/searched on anywhere in the codebase -- see
+    # app/core/encryption.py:EncryptedString for why that combination
+    # makes it a safe encryption target, unlike email/student_id (both
+    # unique + looked up by) or name (free-text but not sensitive enough
+    # to justify losing searchability). Column is sized well above the
+    # plaintext length to hold Fernet's ciphertext.
+    phone: Mapped[str | None] = mapped_column(EncryptedString(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -1,1 +1,32 @@
+# Secrets -- never commit real .env files, only .env.example
 .env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# DB backups (Person E, Step 3) -- these contain real data, not source
+backend/backups/
+*.dump
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+.next/
+frontend/.next/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.rbac import Role, enforce_own_student_record, require_roles
+from app.core.rbac import Role, enforce_own_student_record, get_owned_student, require_roles
 from app.db.session import get_db
 from app.schemas.auth import CurrentUser
 from app.schemas.student import StudentCreate, StudentRead, StudentUpdate
@@ -26,6 +26,32 @@ def create_student(payload: StudentCreate, db: Session = Depends(get_db)) -> Stu
         student = student_service.create_student(db, payload)
     except student_service.DuplicateStudentError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return student
+
+
+@router.get(
+    "/me",
+    response_model=StudentRead,
+    dependencies=[Depends(require_roles(Role.STUDENT))],
+)
+def get_own_student(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_roles(Role.STUDENT)),
+) -> StudentRead:
+    """Resolves the Student record belonging to the authenticated STUDENT
+    account (matched via app.core.rbac.get_owned_student — login email ->
+    Student.email). Never accepts a student_id from the client, so there
+    is no way to request someone else's record through this route.
+
+    Declared before GET /{student_id} so "me" is matched here, not
+    swallowed as a path parameter.
+    """
+    student = get_owned_student(db, current_user)
+    if student is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No student record is linked to this account",
+        )
     return student
 
 

@@ -1,102 +1,153 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  PortalHeader,
+  LoadingState,
+  ErrorState,
+  EmptyState,
+  BackendDependencyNotice,
+} from "../../../components/portal-ui";
+import { useAuthGuard } from "../../../lib/auth";
+import { useOwnStudent } from "../../../lib/own-student";
+import { listOwnFees } from "../../../lib/services";
+import { ApiError } from "../../../lib/api";
+import type { Fee } from "../../../lib/types";
+
+type FeesState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; fees: Fee[] };
+
 export default function FeesPage() {
-  const payments = [
-    {
-      semester: "Semester 6",
-      description: "Tuition Fee",
-      amount: "₹45,000",
-      status: "Pending",
-    },
-    {
-      semester: "Semester 6",
-      description: "Hostel Fee",
-      amount: "₹35,000",
-      status: "Paid",
-    },
-    {
-      semester: "Semester 5",
-      description: "Tuition Fee",
-      amount: "₹45,000",
-      status: "Paid",
-    },
-  ];
+  const guard = useAuthGuard(["student"]);
+  const user = guard.status === "ready" ? guard.user : null;
+  const studentState = useOwnStudent(user);
+
+  const [state, setState] = useState<FeesState>({ status: "loading" });
+
+  function load() {
+    setState({ status: "loading" });
+    listOwnFees()
+      .then((fees) => setState({ status: "ready", fees }))
+      .catch((err) =>
+        setState({
+          status: "error",
+          message: err instanceof ApiError ? err.message : "Failed to load fees.",
+        })
+      );
+  }
+
+  useEffect(() => {
+    if (studentState.status === "ready") {
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [studentState]);
+
+  const sortedFees =
+    state.status === "ready"
+      ? state.fees.slice().sort((a, b) => (a.due_date < b.due_date ? 1 : -1))
+      : [];
+
+  const totalPending =
+    state.status === "ready"
+      ? state.fees
+          .filter((f) => f.status === "PENDING" || f.status === "OVERDUE")
+          .reduce((sum, f) => sum + Number(f.amount), 0)
+      : 0;
 
   return (
     <main className="min-h-screen bg-slate-950 text-white">
-      <nav className="border-b border-slate-800 px-6 py-5">
-        <div className="mx-auto max-w-7xl">
-          <h1 className="text-2xl font-bold">
-            Campus<span className="text-blue-500">Flow</span> AI
-          </h1>
-          <p className="text-sm text-slate-400">Student Portal</p>
-        </div>
-      </nav>
+      <PortalHeader portal="student" active="fees" />
 
       <section className="mx-auto max-w-7xl px-6 py-10">
         <h2 className="text-3xl font-bold">Fees</h2>
-        <p className="mt-2 text-slate-400">
-          View your fee status and payment history.
-        </p>
+        <p className="mt-2 text-slate-400">View your fee status and payment history.</p>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-            <p className="text-sm text-slate-400">Total Fees</p>
-            <p className="mt-2 text-3xl font-bold">₹80,000</p>
-          </div>
+        {guard.status !== "ready" && <LoadingState label="Checking your session..." />}
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-            <p className="text-sm text-slate-400">Paid</p>
-            <p className="mt-2 text-3xl font-bold text-green-500">₹35,000</p>
-          </div>
+        {guard.status === "ready" && studentState.status === "loading" && (
+          <LoadingState label="Loading your profile..." />
+        )}
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-            <p className="text-sm text-slate-400">Pending</p>
-            <p className="mt-2 text-3xl font-bold text-red-500">₹45,000</p>
-          </div>
-        </div>
+        {guard.status === "ready" && studentState.status === "error" && (
+          <ErrorState message={studentState.message} />
+        )}
 
-        <div className="mt-8 overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-          <div className="border-b border-slate-800 p-6">
-            <h3 className="text-xl font-semibold">Payment History</h3>
-          </div>
+        {guard.status === "ready" && studentState.status === "unresolvable" && (
+          <BackendDependencyNotice
+            title="Your account isn't linked to a student record yet"
+            detail="No Student record is linked to this login account (GET /students/me returned no match). Contact an administrator to have your account linked to your student record."
+          />
+        )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-800">
-                <tr>
-                  <th className="px-6 py-4">Semester</th>
-                  <th className="px-6 py-4">Description</th>
-                  <th className="px-6 py-4">Amount</th>
-                  <th className="px-6 py-4">Status</th>
-                </tr>
-              </thead>
+        {guard.status === "ready" && studentState.status === "ready" && (
+          <>
+            {state.status === "loading" && <LoadingState label="Loading fees..." />}
 
-              <tbody>
-                {payments.map((payment, index) => (
-                  <tr
-                    key={index}
-                    className="border-t border-slate-800"
-                  >
-                    <td className="px-6 py-4">{payment.semester}</td>
-                    <td className="px-6 py-4">{payment.description}</td>
-                    <td className="px-6 py-4">{payment.amount}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={
-                          payment.status === "Paid"
-                            ? "text-green-400"
-                            : "text-red-400"
-                        }
-                      >
-                        {payment.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+            {state.status === "error" && <ErrorState message={state.message} onRetry={load} />}
+
+            {state.status === "ready" && state.fees.length === 0 && (
+              <EmptyState message="No fee records yet." />
+            )}
+
+            {state.status === "ready" && state.fees.length > 0 && (
+              <>
+                <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900 p-6">
+                  <p className="text-sm text-slate-400">Outstanding Balance</p>
+                  <p className="mt-1 text-4xl font-bold text-blue-500">
+                    {totalPending.toFixed(2)}
+                  </p>
+                </div>
+
+                <div className="mt-8 overflow-x-auto rounded-xl border border-slate-800 bg-slate-900">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-slate-800 text-slate-400">
+                      <tr>
+                        <th className="px-6 py-4 font-medium">Fee Type</th>
+                        <th className="px-6 py-4 font-medium">Amount</th>
+                        <th className="px-6 py-4 font-medium">Due Date</th>
+                        <th className="px-6 py-4 font-medium">Status</th>
+                        <th className="px-6 py-4 font-medium">Payment Reference</th>
+                        <th className="px-6 py-4 font-medium">Paid Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedFees.map((fee) => (
+                        <tr key={fee.id} className="border-b border-slate-800 last:border-0">
+                          <td className="px-6 py-4">{fee.fee_type}</td>
+                          <td className="px-6 py-4">{Number(fee.amount).toFixed(2)}</td>
+                          <td className="px-6 py-4 text-slate-400">{fee.due_date}</td>
+                          <td className="px-6 py-4">
+                            <StatusBadge status={fee.status} />
+                          </td>
+                          <td className="px-6 py-4 text-slate-400">
+                            {fee.payment_reference ?? "—"}
+                          </td>
+                          <td className="px-6 py-4 text-slate-400">
+                            {fee.paid_at ? new Date(fee.paid_at).toLocaleDateString() : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )}
       </section>
     </main>
   );
+}
+
+function StatusBadge({ status }: { status: Fee["status"] }) {
+  const colors: Record<Fee["status"], string> = {
+    PAID: "text-green-400",
+    PENDING: "text-amber-400",
+    OVERDUE: "text-red-400",
+    CANCELLED: "text-slate-500",
+  };
+  return <span className={colors[status]}>{status}</span>;
 }

@@ -50,3 +50,56 @@ def make_fee_paid_event(
         student_id=student_id,
         data={"amount": amount, "fee_type": fee_type},
     )
+
+
+def make_hostel_allocated_event(
+    student_id: str = "STU-001",
+    hostel_code: str = "HOSTEL-A",
+    room_number: str = "101",
+    room_id: str = "ROOM-001",
+    allocation_id: str = "ALLOC-001",
+    aggregate_id: str = "ALLOC-001",
+) -> CanonicalEvent:
+    """Mirrors the real payload shape published by
+    services/hostel.py's create_allocation() (see
+    app/events/publisher.py's _adapt_hostel_allocated)."""
+    return CanonicalEvent(
+        event_type=EventType.HOSTEL_ALLOCATED,
+        aggregate_type="hostel_allocation",
+        aggregate_id=aggregate_id,
+        student_id=student_id,
+        data={
+            "allocation_id": allocation_id,
+            "student_id": student_id,
+            "hostel_code": hostel_code,
+            "room_id": room_id,
+            "room_number": room_number,
+            "allocated_at": "2026-01-01T00:00:00+00:00",
+        },
+    )
+
+
+def make_exam_registered_event(
+    student_id: str = "STU-001",
+    exam_code: str = "EXAM-101",
+    subject: str = "Data Structures",
+    scheduled_at: str = "2026-05-01T09:00:00+00:00",
+    registration_id: str = "REG-001",
+    aggregate_id: str = "REG-001",
+) -> CanonicalEvent:
+    """Mirrors the real payload shape published by
+    services/examination.py's register_student() (see
+    app/events/publisher.py's _adapt_exam_registered)."""
+    return CanonicalEvent(
+        event_type=EventType.EXAM_REGISTERED,
+        aggregate_type="exam_registration",
+        aggregate_id=aggregate_id,
+        student_id=student_id,
+        data={
+            "registration_id": registration_id,
+            "student_id": student_id,
+            "exam_code": exam_code,
+            "subject": subject,
+            "scheduled_at": scheduled_at,
+        },
+    )

@@ -51,6 +51,13 @@ def list_fees(db: Session) -> list[Fee]:
     return fee_repo.list_all(db)
 
 
+def list_fees_for_student(db: Session, student_pk) -> list[Fee]:
+    """Fees belonging to a single student, resolved by internal PK. Used by
+    GET /fees/me — the caller is responsible for resolving student_pk from
+    the authenticated identity (never from client-supplied input)."""
+    return fee_repo.list_by_student(db, student_pk)
+
+
 def update_fee(db: Session, fee_id: str, data: FeeUpdate) -> Fee | None:
     fee = fee_repo.get_by_fee_id(db, fee_id)
     if fee is None:

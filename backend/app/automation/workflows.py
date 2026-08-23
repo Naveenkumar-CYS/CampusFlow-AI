@@ -85,6 +85,24 @@ WORKFLOW_CATALOG: dict[str, Workflow] = {
             WorkflowStep(3, "record_execution"),
         ],
     ),
+    "hostel_allocation_confirmation": Workflow(
+        workflow_id="hostel_allocation_confirmation",
+        name="Hostel Allocation Confirmation",
+        steps=[
+            WorkflowStep(1, "create_notification"),
+            WorkflowStep(2, "send_email"),
+            WorkflowStep(3, "record_execution"),
+        ],
+    ),
+    "exam_registration_confirmation": Workflow(
+        workflow_id="exam_registration_confirmation",
+        name="Exam Registration Confirmation",
+        steps=[
+            WorkflowStep(1, "create_notification"),
+            WorkflowStep(2, "send_email"),
+            WorkflowStep(3, "record_execution"),
+        ],
+    ),
 }
 
 
