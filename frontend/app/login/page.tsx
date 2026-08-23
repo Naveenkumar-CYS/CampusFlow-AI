@@ -31,13 +31,22 @@ export default function LoginPage() {
 
       const user = await apiFetch("/auth/me");
 
-      if (user.role === "STUDENT") {
-        router.push("/student/dashboard");
-      } else if (user.role === "FACULTY") {
-        router.push("/faculty/dashboard");
-      } else {
-        setError("This portal is not assigned to your role.");
-      }
+     const destination: Record<string, string> = {
+  STUDENT: "/student/dashboard",
+  FACULTY: "/faculty/dashboard",
+  ADMIN: "/admin/dashboard",
+  ACCOUNTS: "/accounts/dashboard",
+  WARDEN: "/warden/dashboard",
+  EXAM_OFFICER: "/exam/dashboard",
+};
+
+const path = destination[user.role];
+
+if (path) {
+  router.push(path);
+} else {
+  setError("This portal is not assigned to your role.");
+}
     } catch (err) {
       setError("Invalid email or password.");
     } finally {
