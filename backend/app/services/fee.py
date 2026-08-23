@@ -76,10 +76,31 @@ def pay_fee(db: Session, fee_id: str, data: FeePayRequest) -> Fee | None:
     Never marks a fee PAID without a valid state transition, and never
     publishes fee.paid before the state change has committed (see the
     Critical Event Rule in the Day 3-4 brief).
+
+    Thin wrapper around pay_fee_with_automation_result() that keeps this
+    function's existing return type (Fee | None) exactly as every current
+    caller (the /fees/{fee_id}/pay route, existing tests) already expects.
+    """
+    fee, _automation_result = pay_fee_with_automation_result(db, fee_id, data)
+    return fee
+
+
+def pay_fee_with_automation_result(
+    db: Session, fee_id: str, data: FeePayRequest
+) -> tuple[Fee | None, dict | None]:
+    """
+    Same validate -> persist -> emit flow as pay_fee(), but also returns the
+    publisher's outcome dict (or None if no adapter was registered for
+    fee.paid). Added for the payment webhook, which -- unlike the direct
+    /fees/{fee_id}/pay caller -- needs to know whether the fee.paid event
+    actually made it into the automation backbone so it doesn't report an
+    unqualified success back to the provider when that step failed. Contains
+    the exact same logic pay_fee() always had; nothing about payment
+    processing itself changed.
     """
     fee = fee_repo.get_by_fee_id(db, fee_id)
     if fee is None:
-        return None
+        return None, None
 
     if fee.status == FeeStatus.PAID:
         raise InvalidFeeStateTransitionError(f"fee '{fee_id}' is already PAID")
@@ -100,7 +121,7 @@ def pay_fee(db: Session, fee_id: str, data: FeePayRequest) -> Fee | None:
     # best-effort publish to Person B's automation backbone. A failure
     # here must never look like the payment failed; pay_fee() has
     # already succeeded and returns the paid Fee regardless.
-    publish(
+    automation_result = publish(
         db,
         event_type="fee.paid",
         aggregate_id=fee.fee_id,
@@ -114,4 +135,4 @@ def pay_fee(db: Session, fee_id: str, data: FeePayRequest) -> Fee | None:
         },
     )
 
-    return fee
+    return fee, automation_result

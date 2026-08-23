@@ -16,6 +16,9 @@ from app.models import student  # noqa: E402,F401  (registers Student on Base.me
 from app.models import admission  # noqa: E402,F401  (registers Admission on Base.metadata)
 from app.models import execution  # noqa: E402,F401  (registers Execution/ActionExecution on Base.metadata)
 from app.models import fee  # noqa: E402,F401  (registers Fee on Base.metadata)
+from app.models import hostel  # noqa: E402,F401  (registers Hostel/Room/HostelAllocation on Base.metadata)
+from app.models import examination  # noqa: E402,F401  (registers Exam/ExamRegistration on Base.metadata)
+from app.models import user  # noqa: E402,F401  (registers User on Base.metadata)
 from app.models import audit  # noqa: E402,F401  (registers AuditRecord on Base.metadata -- Stage 6)
 
 # this is the Alembic Config object, which provides

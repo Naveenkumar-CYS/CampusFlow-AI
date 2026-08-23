@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     postgres_user: str = "postgres"
     postgres_password: str = ""
 
+    # JWT auth. jwt_secret has no safe default on purpose — set it via .env
+    # (or the environment) in every deployment; do not commit a real value.
+    jwt_secret: str = "dev-only-insecure-secret-change-me"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60
+
+    # Payment provider webhook. Provider-neutral HMAC-SHA256 shared secret,
+    # same "no safe default in real deployments" convention as jwt_secret --
+    # set a real value via .env, never commit one. The dev-only default lets
+    # local/test runs sign requests without needing real provider credentials.
+    payment_webhook_secret: str = "dev-only-insecure-webhook-secret-change-me"
+
     # Redis Streams event bus configuration. Defaults target a local
     # docker-compose/dev Redis instance -- override via env vars (see
     # .env.example) for staging/prod.

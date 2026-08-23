@@ -1,11 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.rbac import Role, require_roles
 from app.db.session import get_db
 from app.schemas.admission import AdmissionCreate, AdmissionRead, AdmissionUpdate
 from app.services import admission as admission_service
 
-router = APIRouter(prefix="/admissions", tags=["admissions"])
+router = APIRouter(
+    prefix="/admissions",
+    tags=["admissions"],
+    # Admission handles applicants before they have a Student/user record,
+    # so this is an ADMIN-only back-office workflow — no student self-service.
+    dependencies=[Depends(require_roles(Role.ADMIN))],
+)
 
 
 @router.post("", response_model=AdmissionRead, status_code=status.HTTP_201_CREATED)

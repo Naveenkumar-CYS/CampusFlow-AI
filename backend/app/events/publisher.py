@@ -54,6 +54,36 @@ def _adapt_fee_paid(raw: dict[str, Any]) -> CanonicalEvent:
     )
 
 
+def _adapt_hostel_allocated(raw: dict[str, Any]) -> CanonicalEvent:
+    return CanonicalEvent(
+        event_type=EventType.HOSTEL_ALLOCATED,
+        aggregate_type="hostel_allocation",
+        aggregate_id=raw["aggregate_id"],
+        student_id=raw["student_id"],
+        data=raw["data"],
+    )
+
+
+def _adapt_exam_registered(raw: dict[str, Any]) -> CanonicalEvent:
+    return CanonicalEvent(
+        event_type=EventType.EXAM_REGISTERED,
+        aggregate_type="exam_registration",
+        aggregate_id=raw["aggregate_id"],
+        student_id=raw["student_id"],
+        data=raw["data"],
+    )
+
+
+def _adapt_attendance_marked(raw: dict[str, Any]) -> CanonicalEvent:
+    return CanonicalEvent(
+        event_type=EventType.ATTENDANCE_MARKED,
+        aggregate_type="attendance",
+        aggregate_id=raw["aggregate_id"],
+        student_id=raw["student_id"],
+        data=raw["data"],
+    )
+
+
 # Registered mappings for producer event_type -> CanonicalEvent builder.
 # Only event types B's automation.events.EventType allow-list actually
 # knows about get registered here -- adding a mapping for an event type
@@ -61,6 +91,9 @@ def _adapt_fee_paid(raw: dict[str, Any]) -> CanonicalEvent:
 # don't add one until B's EventType enum has the matching member.
 _ADAPTER = ProducerAdapter()
 _ADAPTER.register("fee.paid", _adapt_fee_paid)
+_ADAPTER.register("hostel.allocated", _adapt_hostel_allocated)
+_ADAPTER.register("exam.registered", _adapt_exam_registered)
+_ADAPTER.register("attendance.marked", _adapt_attendance_marked)
 
 
 def publish(

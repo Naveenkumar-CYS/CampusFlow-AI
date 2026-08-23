@@ -12,6 +12,21 @@ negotiable.
 > Everything else in this file (`student.*`, `admission.*`) is still
 > unimplemented — CRUD only for those, same as before.
 
+> **Attendance update:** `hostel.allocated`, `exam.registered`, and now
+> `attendance.marked` are also live, same in-process pattern as
+> `fee.paid`. `POST /attendance/records` and
+> `PATCH /attendance/records/{id}` publish `attendance.marked` with an
+> `attendance_percentage` field computed from plain counts over the
+> student's existing records for that subject (present / total, no
+> prediction) — this is what feeds B's existing `_attendance_below_75`
+> rule in `app/automation/rules.py`. One open item flagged for Person B:
+> `fee.paid` uses the human-readable `fee_id` as `aggregate_id`, while
+> `hostel.allocated` / `exam.registered` / `attendance.marked` all use
+> the row's internal UUID instead. Nothing downstream currently reads
+> `aggregate_id` (idempotency keys off `event_id`), so this is safe as-is,
+> but the two conventions should be reconciled — see FINAL REPORT for
+> details.
+
 ## Envelope (shared by all events)
 
 ```json
