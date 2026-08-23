@@ -43,7 +43,7 @@ export default function LoginPage() {
         exam_officer: "/exam/dashboard",
       };
 
-      const path = destination[user.role];
+      const path = destination[user.role.toLowerCase()];
 
       if (path) {
         router.push(path);
